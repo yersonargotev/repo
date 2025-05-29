@@ -8,7 +8,7 @@ import { NextRequest, NextResponse } from 'next/server';
 const githubService = new GitHubService();
 const aiService = new AIAnalysisService();
 
-async function fetchAndAnalyze(owner: string, repoName: string) {
+async function fetchAndAnalyze(owner: string, repoName: string, forceRefresh: boolean = false) {
   const fullName = `${owner}/${repoName}`;
 
   try {
@@ -24,8 +24,8 @@ async function fetchAndAnalyze(owner: string, repoName: string) {
       });
     }
 
-    // If we have both repo and analysis, return them (unless they're old)
-    if (repoRecord && analysisRecord) {
+    // If we have both repo and analysis, return them (unless they're old or we're forcing refresh)
+    if (repoRecord && analysisRecord && !forceRefresh) {
       const daysSinceAnalysis = (Date.now() - new Date(analysisRecord.createdAt).getTime()) / (1000 * 60 * 60 * 24);
       if (daysSinceAnalysis < 7) { // Cache for 7 days
         console.log(`Using cached analysis for ${fullName}`);
@@ -96,29 +96,36 @@ async function fetchAndAnalyze(owner: string, repoName: string) {
       repoRecord = await db.query.repositories.findFirst({ 
         where: eq(repositoriesTable.id, newRepoId) 
       });
-    }
-
-    // Generate AI analysis if we don't have one or it's outdated
-    if (!analysisRecord || (Date.now() - new Date(analysisRecord.createdAt).getTime()) / (1000 * 60 * 60 * 24) >= 7) {
-      console.log(`Generating AI analysis for ${fullName}`);
+    }    // Generate AI analysis if we don't have one or it's outdated or we're forcing refresh
+    if (!analysisRecord || forceRefresh || (Date.now() - new Date(analysisRecord.createdAt).getTime()) / (1000 * 60 * 60 * 24) >= 7) {
+      console.log(`${forceRefresh ? 'Force refreshing' : 'Generating'} AI analysis for ${fullName}`);
       
       try {
         const aiAnalysis = await aiService.analyzeRepository(githubData);
-        
-        if (analysisRecord) {          // Update existing analysis
+          if (analysisRecord) {          // Update existing analysis
           await db.update(aiAnalysesTable)
             .set({
               alternatives: aiAnalysis.alternatives as Alternative[],
               category: aiAnalysis.category,
+              summary: aiAnalysis.summary,
+              strengths: aiAnalysis.strengths,
+              considerations: aiAnalysis.considerations,
+              useCase: aiAnalysis.useCase,
+              targetAudience: aiAnalysis.targetAudience,
               analysisContent: `${aiAnalysis.summary}\n\nStrengths: ${aiAnalysis.strengths.join(', ')}\n\nConsiderations: ${aiAnalysis.considerations.join(', ')}\n\nUse Case: ${aiAnalysis.useCase}\n\nTarget Audience: ${aiAnalysis.targetAudience}`,
+              updatedAt: new Date(),
             })
-            .where(eq(aiAnalysesTable.id, analysisRecord.id));
-        } else {
+            .where(eq(aiAnalysesTable.id, analysisRecord.id));        } else {
           // Insert new analysis
           await db.insert(aiAnalysesTable).values({
             repositoryId: newRepoId,
             alternatives: aiAnalysis.alternatives as Alternative[],
             category: aiAnalysis.category,
+            summary: aiAnalysis.summary,
+            strengths: aiAnalysis.strengths,
+            considerations: aiAnalysis.considerations,
+            useCase: aiAnalysis.useCase,
+            targetAudience: aiAnalysis.targetAudience,
             analysisContent: `${aiAnalysis.summary}\n\nStrengths: ${aiAnalysis.strengths.join(', ')}\n\nConsiderations: ${aiAnalysis.considerations.join(', ')}\n\nUse Case: ${aiAnalysis.useCase}\n\nTarget Audience: ${aiAnalysis.targetAudience}`,
           });
         }
@@ -174,6 +181,7 @@ export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const owner = searchParams.get('owner');
   const repo = searchParams.get('repo');
+  const forceRefresh = searchParams.get('forceRefresh') === 'true';
 
   if (!owner || !repo) {
     return NextResponse.json({ 
@@ -182,7 +190,7 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const data = await fetchAndAnalyze(owner, repo);
+    const data = await fetchAndAnalyze(owner, repo, forceRefresh);
     
     if (!data.repoData) {
       return NextResponse.json({ 
@@ -229,7 +237,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { owner, repo } = body;
+    const { owner, repo, forceRefresh = false } = body;
 
     if (!owner || !repo) {
       return NextResponse.json(
@@ -238,7 +246,7 @@ export async function POST(request: NextRequest) {
       );
     }
     
-    const data = await fetchAndAnalyze(owner, repo);
+    const data = await fetchAndAnalyze(owner, repo, forceRefresh);
     
     if (!data.repoData) {
       return NextResponse.json({ 

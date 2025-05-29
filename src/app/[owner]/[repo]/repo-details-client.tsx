@@ -67,13 +67,13 @@ interface ApiResponse {
 }
 
 // --- Función de Fetch para el cliente ---
-async function fetchRepoAndAnalysisFromServer(owner: string, repoName: string): Promise<ApiResponse> {
+async function fetchRepoAndAnalysisFromServer(owner: string, repoName: string, forceRefresh: boolean = false): Promise<ApiResponse> {
   const response = await fetch('/api/analyze-repo', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ owner, repo: repoName }),
+    body: JSON.stringify({ owner, repo: repoName, forceRefresh }),
   });
   
   if (!response.ok) {
@@ -94,20 +94,20 @@ export default function RepoDetailsClient({ owner, repoName }: { owner: string; 
     staleTime: 1000 * 60 * 5, // 5 minutos de stale time
     refetchOnWindowFocus: false,
   });
-  
-  // Mutación para forzar re-análisis
+    // Mutación para forzar re-análisis
   const { mutate: reanalyzeRepo, isPending: isReanalyzing } = useMutation({
     mutationFn: async () => {
-      // Invalidate cache to force fresh analysis
-      queryClientHook.invalidateQueries({ queryKey: ['repo', owner, repoName] });
-      await refetch();
-      return { message: "Re-analysis completed" };
+      // Force fresh analysis by calling the API with forceRefresh flag
+      const result = await fetchRepoAndAnalysisFromServer(owner, repoName, true);
+      return result;
     },
     onSuccess: (result) => {
-      toast.success(`Success: ${result.message}`);
+      // Update the query cache with new data
+      queryClientHook.setQueryData(['repo', owner, repoName], result);
+      toast.success("¡Re-análisis completado exitosamente!");
     },
     onError: (error) => {
-      toast.error(`Error during re-analysis: ${error.message || "An unexpected error occurred"}`);
+      toast.error(`Error durante el re-análisis: ${error.message || "Ocurrió un error inesperado"}`);
     },
   });
 
