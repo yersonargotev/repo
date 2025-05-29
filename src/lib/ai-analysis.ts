@@ -2,42 +2,42 @@ import { openai } from '@ai-sdk/openai';
 import { generateObject, generateText } from 'ai';
 import { z } from 'zod';
 
-// Schema for structured AI analysis
+// Schema for structured AI analysis with improved validation
 export const AnalysisSchema = z.object({
   alternatives: z.array(z.object({
-    name: z.string(),
-    url: z.string(),
+    name: z.string().min(1),
+    url: z.string().url(),
     description: z.string().optional(),
-    githubUrl: z.string().optional(),
-    stars: z.number().optional(),
+    githubUrl: z.string().url().optional(),
+    stars: z.number().int().min(0).optional().or(z.null()).transform(val => val ?? undefined),
     category: z.string().optional(),
-    reasoning: z.string() // Why this alternative is suggested
-  })),
-  category: z.string(),
-  summary: z.string(),
-  strengths: z.array(z.string()),
-  considerations: z.array(z.string()),
-  useCase: z.string(),
-  targetAudience: z.string()
+    reasoning: z.string().min(1) // Why this alternative is suggested
+  })).min(1),
+  category: z.string().min(1),
+  summary: z.string().min(10),
+  strengths: z.array(z.string().min(1)).min(1),
+  considerations: z.array(z.string().min(1)).min(1),
+  useCase: z.string().min(5),
+  targetAudience: z.string().min(5)
 });
 
 // Fallback schema with more lenient validation
 export const FallbackAnalysisSchema = z.object({
   alternatives: z.array(z.object({
-    name: z.string(),
-    url: z.string(),
+    name: z.string().min(1),
+    url: z.string().url(),
     description: z.string().optional(),
-    githubUrl: z.string().optional(),
-    stars: z.number().optional(),
+    githubUrl: z.string().url().optional(),
+    stars: z.number().int().min(0).optional().or(z.null()).transform(val => val ?? undefined),
     category: z.string().optional(),
-    reasoning: z.string()
-  })),
-  category: z.string(),
-  summary: z.string(),
-  strengths: z.array(z.string()).optional().default([]),
-  considerations: z.array(z.string()).optional().default([]),
-  useCase: z.string().optional().default(""),
-  targetAudience: z.string().optional().default("")
+    reasoning: z.string().min(1)
+  })).min(1),
+  category: z.string().min(1),
+  summary: z.string().min(1),
+  strengths: z.array(z.string()).optional().default(["Has active development", "Open source project"]),
+  considerations: z.array(z.string()).optional().default(["Requires evaluation for specific use case"]),
+  useCase: z.string().optional().default("Software development tool"),
+  targetAudience: z.string().optional().default("Developers and technical users")
 });
 
 export type AIAnalysisResult = z.infer<typeof AnalysisSchema>;
@@ -154,16 +154,16 @@ export class AIAnalysisService {
     - Topics/Tags: ${repoData.topics?.join(', ') || 'None'}
     - URL: ${repoData.html_url}
 
-    You must provide a complete analysis with ALL of the following sections:
+    You must provide a complete analysis with ALL of the following sections:    1. **alternatives**: Find 5-8 similar tools, libraries, or projects that serve the same or similar purpose. For each alternative, provide:
+       - name: Name of the project/tool (REQUIRED: string)
+       - url: GitHub URL or main website URL (REQUIRED: valid URL string)
+       - description: Brief description of what it does (OPTIONAL: string)
+       - githubUrl: GitHub URL if different from url (OPTIONAL: valid URL string)  
+       - stars: GitHub star count if known (OPTIONAL: positive integer number, omit if unknown)
+       - category: Specific category/type (OPTIONAL: string)
+       - reasoning: Detailed explanation for why it's a good alternative (REQUIRED: string)
 
-    1. **alternatives**: Find 5-8 similar tools, libraries, or projects that serve the same or similar purpose. For each alternative, provide:
-       - name: Name of the project/tool
-       - url: GitHub URL or main website URL
-       - description: Brief description of what it does (optional)
-       - githubUrl: GitHub URL if different from url (optional)
-       - stars: Estimated popularity/stars number (optional)
-       - category: Specific category/type (optional)
-       - reasoning: Detailed explanation for why it's a good alternative
+    IMPORTANT: For the stars field, only provide actual numbers if you're confident about them. If uncertain, omit the field entirely rather than guessing.
 
     2. **category**: Determine the most appropriate category for this repository (e.g., "Web Framework", "CLI Tool", "Machine Learning Library", "Database", "DevOps Tool", etc.)
 

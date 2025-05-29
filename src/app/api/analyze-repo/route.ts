@@ -36,15 +36,15 @@ async function fetchAndAnalyze(owner: string, repoName: string, forceRefresh: bo
     // Fetch fresh data from GitHub
     console.log(`Fetching GitHub data for ${fullName}`);
     const githubData = await githubService.fetchRepository(owner, repoName);
-      // Get repository topics if available
+    
+    // Get repository topics if available
     const topics = await githubService.getRepositoryTopics(owner, repoName);
     githubData.topics = topics;
-    
-    let newRepoId: number;
-    
+      // Handle repository creation/update with proper upsert pattern
     if (!repoRecord) {
-      // Insert new repository with race condition handling
-      try {        const inserted = await db.insert(repositoriesTable).values({
+      // Use INSERT ... ON CONFLICT for better race condition handling
+      try {
+        const upsertResult = await db.insert(repositoriesTable).values({
           owner: githubData.owner.login,
           name: githubData.name,
           fullName: fullName,
@@ -54,55 +54,62 @@ async function fetchAndAnalyze(owner: string, repoName: string, forceRefresh: bo
           primaryLanguage: githubData.language,
           stars: githubData.stargazers_count,
           forks: githubData.forks_count,
+        }).onConflictDoUpdate({
+          target: repositoriesTable.fullName,
+          set: {
+            description: githubData.description,
+            stars: githubData.stargazers_count,
+            forks: githubData.forks_count,
+            primaryLanguage: githubData.language,
+            updatedAt: new Date(),
+          }
         }).returning({ id: repositoriesTable.id });
         
-        newRepoId = inserted[0].id;      } catch (error: unknown) {
-        // Handle race condition - another request may have inserted the same repo
-        if (error && typeof error === 'object' && 'code' in error && 'constraint' in error && 
-            error.code === '23505' && error.constraint === 'repositories_full_name_unique') {
-          console.log(`Repository ${fullName} was inserted by another request, fetching existing record`);
-          // Fetch the existing repository
-          const existingRepo = await db.query.repositories.findFirst({
-            where: eq(repositoriesTable.fullName, fullName),
-          });
-          
-          if (!existingRepo) {
-            throw new Error(`Repository ${fullName} was inserted but could not be retrieved`);
-          }
-          
-          newRepoId = existingRepo.id;
-          repoRecord = existingRepo;
-        } else {
-          throw error; // Re-throw if it's a different error
+        const repoId = upsertResult[0].id;
+        repoRecord = await db.query.repositories.findFirst({
+          where: eq(repositoriesTable.id, repoId)
+        });
+      } catch (error: unknown) {
+        console.error(`Error upserting repository ${fullName}:`, error);
+        // Fallback: try to fetch existing record
+        repoRecord = await db.query.repositories.findFirst({
+          where: eq(repositoriesTable.fullName, fullName),
+        });
+        if (!repoRecord) {
+          throw new Error(`Failed to create or retrieve repository ${fullName}`);
         }
       }
-        if (!repoRecord) {
-        repoRecord = await db.query.repositories.findFirst({
-          where: eq(repositoriesTable.id, newRepoId) 
-        });
-      }
     } else {
-      newRepoId = repoRecord.id;
       // Update existing repository data
-      await db.update(repositoriesTable)
-        .set({
-          description: githubData.description,
-          stars: githubData.stargazers_count,
-          forks: githubData.forks_count,
-          primaryLanguage: githubData.language,
-          updatedAt: new Date(),
-        })
-        .where(eq(repositoriesTable.id, newRepoId));
-      
-      repoRecord = await db.query.repositories.findFirst({ 
-        where: eq(repositoriesTable.id, newRepoId) 
-      });
+      try {
+        await db.update(repositoriesTable)
+          .set({
+            description: githubData.description,
+            stars: githubData.stargazers_count,
+            forks: githubData.forks_count,
+            primaryLanguage: githubData.language,
+            updatedAt: new Date(),
+          })
+          .where(eq(repositoriesTable.id, repoRecord.id));
+        
+        // Refresh the record
+        const updated = await db.query.repositories.findFirst({ 
+          where: eq(repositoriesTable.id, repoRecord.id) 
+        });
+        if (updated) repoRecord = updated;
+      } catch (error) {
+        console.error(`Error updating repository ${fullName}:`, error);
+        // Continue with existing record if update fails
+      }
+    }
+
+    if (!repoRecord) {
+      throw new Error(`Failed to create or retrieve repository ${fullName}`);
     }    // Check if repo exists but no analysis (may indicate analysis in progress by another request)
     if (repoRecord && !analysisRecord && !forceRefresh) {
-      // Check if this repo was created very recently (within last 2 minutes)
       const repoAge = Date.now() - new Date(repoRecord.createdAt).getTime();
-      if (repoAge < 2 * 60 * 1000) { // 2 minutes
-        // Likely analysis in progress, throw a specific error
+      if (repoAge < 3 * 60 * 1000) { // 3 minutes - increased from 2 to give AI more time
+        console.log(`Analysis likely in progress for ${fullName}, repo created ${Math.round(repoAge / 1000)}s ago`);
         throw new Error('ANALYSIS_IN_PROGRESS');
       }
     }
@@ -113,7 +120,8 @@ async function fetchAndAnalyze(owner: string, repoName: string, forceRefresh: bo
       
       try {
         const aiAnalysis = await aiService.analyzeRepository(githubData);
-          if (analysisRecord) {          // Update existing analysis
+          if (analysisRecord) {
+          // Update existing analysis
           await db.update(aiAnalysesTable)
             .set({
               alternatives: aiAnalysis.alternatives as Alternative[],
@@ -126,23 +134,52 @@ async function fetchAndAnalyze(owner: string, repoName: string, forceRefresh: bo
               analysisContent: `${aiAnalysis.summary}\n\nStrengths: ${aiAnalysis.strengths.join(', ')}\n\nConsiderations: ${aiAnalysis.considerations.join(', ')}\n\nUse Case: ${aiAnalysis.useCase}\n\nTarget Audience: ${aiAnalysis.targetAudience}`,
               updatedAt: new Date(),
             })
-            .where(eq(aiAnalysesTable.id, analysisRecord.id));        } else {
-          // Insert new analysis
-          await db.insert(aiAnalysesTable).values({
-            repositoryId: newRepoId,
-            alternatives: aiAnalysis.alternatives as Alternative[],
-            category: aiAnalysis.category,
-            summary: aiAnalysis.summary,
-            strengths: aiAnalysis.strengths,
-            considerations: aiAnalysis.considerations,
-            useCase: aiAnalysis.useCase,
-            targetAudience: aiAnalysis.targetAudience,
-            analysisContent: `${aiAnalysis.summary}\n\nStrengths: ${aiAnalysis.strengths.join(', ')}\n\nConsiderations: ${aiAnalysis.considerations.join(', ')}\n\nUse Case: ${aiAnalysis.useCase}\n\nTarget Audience: ${aiAnalysis.targetAudience}`,
-          });
+            .where(eq(aiAnalysesTable.id, analysisRecord.id));
+        } else {
+          // Insert new analysis with conflict handling
+          try {
+            await db.insert(aiAnalysesTable).values({
+              repositoryId: repoRecord.id,
+              alternatives: aiAnalysis.alternatives as Alternative[],
+              category: aiAnalysis.category,
+              summary: aiAnalysis.summary,
+              strengths: aiAnalysis.strengths,
+              considerations: aiAnalysis.considerations,
+              useCase: aiAnalysis.useCase,
+              targetAudience: aiAnalysis.targetAudience,
+              analysisContent: `${aiAnalysis.summary}\n\nStrengths: ${aiAnalysis.strengths.join(', ')}\n\nConsiderations: ${aiAnalysis.considerations.join(', ')}\n\nUse Case: ${aiAnalysis.useCase}\n\nTarget Audience: ${aiAnalysis.targetAudience}`,
+            });
+          } catch (insertError: unknown) {
+            // Handle potential race condition where another process inserted analysis
+            if (insertError && typeof insertError === 'object' && 'code' in insertError && insertError.code === '23505') {
+              console.log(`Analysis for ${fullName} was inserted by concurrent request, updating existing`);
+              // Try to update existing analysis that was inserted by another process
+              const existingAnalysis = await db.query.aiAnalyses.findFirst({
+                where: eq(aiAnalysesTable.repositoryId, repoRecord.id)
+              });
+              if (existingAnalysis) {
+                await db.update(aiAnalysesTable)
+                  .set({
+                    alternatives: aiAnalysis.alternatives as Alternative[],
+                    category: aiAnalysis.category,
+                    summary: aiAnalysis.summary,
+                    strengths: aiAnalysis.strengths,
+                    considerations: aiAnalysis.considerations,
+                    useCase: aiAnalysis.useCase,
+                    targetAudience: aiAnalysis.targetAudience,
+                    analysisContent: `${aiAnalysis.summary}\n\nStrengths: ${aiAnalysis.strengths.join(', ')}\n\nConsiderations: ${aiAnalysis.considerations.join(', ')}\n\nUse Case: ${aiAnalysis.useCase}\n\nTarget Audience: ${aiAnalysis.targetAudience}`,
+                    updatedAt: new Date(),
+                  })
+                  .where(eq(aiAnalysesTable.id, existingAnalysis.id));
+              }
+            } else {
+              throw insertError;
+            }
+          }
         }
         
         analysisRecord = await db.query.aiAnalyses.findFirst({ 
-          where: eq(aiAnalysesTable.repositoryId, newRepoId) 
+          where: eq(aiAnalysesTable.repositoryId, repoRecord.id) 
         });
       } catch (aiError) {
         console.error('AI analysis failed:', aiError);
@@ -159,20 +196,36 @@ async function fetchAndAnalyze(owner: string, repoName: string, forceRefresh: bo
           category: githubData.language || "Software",
           analysisContent: `Analysis for ${githubData.name}: ${githubData.description || 'No description available.'}`
         };
-        
-        if (analysisRecord) {
+          if (analysisRecord) {
           await db.update(aiAnalysesTable)
             .set(fallbackAnalysis)
             .where(eq(aiAnalysesTable.id, analysisRecord.id));
         } else {
-          await db.insert(aiAnalysesTable).values({
-            repositoryId: newRepoId,
-            ...fallbackAnalysis,
-          });
+          try {
+            await db.insert(aiAnalysesTable).values({
+              repositoryId: repoRecord.id,
+              ...fallbackAnalysis,
+            });
+          } catch (fallbackInsertError: unknown) {
+            // Handle race condition even in fallback scenario
+            if (fallbackInsertError && typeof fallbackInsertError === 'object' && 'code' in fallbackInsertError && fallbackInsertError.code === '23505') {
+              console.log(`Fallback analysis for ${fullName} was inserted by concurrent request`);
+              const existingFallback = await db.query.aiAnalyses.findFirst({
+                where: eq(aiAnalysesTable.repositoryId, repoRecord.id)
+              });
+              if (existingFallback) {
+                await db.update(aiAnalysesTable)
+                  .set(fallbackAnalysis)
+                  .where(eq(aiAnalysesTable.id, existingFallback.id));
+              }
+            } else {
+              console.error('Failed to insert fallback analysis:', fallbackInsertError);
+            }
+          }
         }
         
         analysisRecord = await db.query.aiAnalyses.findFirst({ 
-          where: eq(aiAnalysesTable.repositoryId, newRepoId) 
+          where: eq(aiAnalysesTable.repositoryId, repoRecord.id) 
         });
       }
     }
