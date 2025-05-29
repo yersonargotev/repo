@@ -1,92 +1,172 @@
-import { aiAnalyses as aiAnalysesTable, repositories as repositoriesTable } from '@/db/schema';
+import { aiAnalyses as aiAnalysesTable, repositories as repositoriesTable, type Alternative } from '@/db/schema';
+import { AIAnalysisService } from '@/lib/ai-analysis';
 import { db } from '@/lib/db';
+import { GitHubService } from '@/lib/github';
 import { eq } from 'drizzle-orm';
 import { NextRequest, NextResponse } from 'next/server';
-// Asumimos que tienes una función similar a getRepoAndAnalysis en el backend
-// que puede ser llamada aquí. Por simplicidad, la lógica está inline.
 
-// Debes crear esta función o adaptar la lógica de `getRepoAndAnalysis`
-// para que funcione en este contexto de API Route.
-// Esta es una versión simplificada y simulada.
+const githubService = new GitHubService();
+const aiService = new AIAnalysisService();
+
 async function fetchAndAnalyze(owner: string, repoName: string) {
   const fullName = `${owner}/${repoName}`;
 
-  // Intenta obtener de la BD
-  let repoRecord = await db.query.repositories.findFirst({
-    where: eq(repositoriesTable.fullName, fullName),
-  });
-  let analysisRecord = null;
-
-  if (repoRecord) {
-    analysisRecord = await db.query.aiAnalyses.findFirst({
-      where: eq(aiAnalysesTable.repositoryId, repoRecord.id),
+  try {
+    // Check if we already have this repo and analysis in the database
+    let repoRecord = await db.query.repositories.findFirst({
+      where: eq(repositoriesTable.fullName, fullName),
     });
-  }
+    
+    let analysisRecord = null;
+    if (repoRecord) {
+      analysisRecord = await db.query.aiAnalyses.findFirst({
+        where: eq(aiAnalysesTable.repositoryId, repoRecord.id),
+      });
+    }
 
-  // Si no está en la BD o no tiene análisis, simula fetch y análisis
-  if (!repoRecord || !analysisRecord) {
-    console.log(`API: Simulando fetch de GitHub API para ${fullName}`);
-    const mockGithubData = {
-      name: repoName,
-      owner: { login: owner, avatar_url: `https://avatars.githubusercontent.com/${owner}` },
-      description: `(API) Una descripción simulada para ${repoName}.`,
-      html_url: `https://github.com/${fullName}`,
-      language: "JavaScript",
-      stargazers_count: Math.floor(Math.random() * 1000)+1,
-      forks_count: Math.floor(Math.random() * 500)+1,
-    };
+    // If we have both repo and analysis, return them (unless they're old)
+    if (repoRecord && analysisRecord) {
+      const daysSinceAnalysis = (Date.now() - new Date(analysisRecord.createdAt).getTime()) / (1000 * 60 * 60 * 24);
+      if (daysSinceAnalysis < 7) { // Cache for 7 days
+        console.log(`Using cached analysis for ${fullName}`);
+        return { repoData: repoRecord, analysisData: analysisRecord };
+      }
+    }
 
+    // Fetch fresh data from GitHub
+    console.log(`Fetching GitHub data for ${fullName}`);
+    const githubData = await githubService.fetchRepository(owner, repoName);
+      // Get repository topics if available
+    const topics = await githubService.getRepositoryTopics(owner, repoName);
+    githubData.topics = topics;
+    
     let newRepoId: number;
+    
     if (!repoRecord) {
-        const inserted = await db.insert(repositoriesTable).values({
-        owner: mockGithubData.owner.login,
-        name: mockGithubData.name,
-        fullName: fullName,
-        description: mockGithubData.description,
-        githubUrl: mockGithubData.html_url,
-        avatarUrl: mockGithubData.owner.avatar_url,
-        primaryLanguage: mockGithubData.language,
-        stars: mockGithubData.stargazers_count,
-        forks: mockGithubData.forks_count,
-      }).returning({ id: repositoriesTable.id });
-      newRepoId = inserted[0].id;
-      repoRecord = await db.query.repositories.findFirst({ where: eq(repositoriesTable.id, newRepoId) });
+      // Insert new repository with race condition handling
+      try {        const inserted = await db.insert(repositoriesTable).values({
+          owner: githubData.owner.login,
+          name: githubData.name,
+          fullName: fullName,
+          description: githubData.description,
+          githubUrl: githubData.html_url,
+          avatarUrl: githubData.owner.avatar_url,
+          primaryLanguage: githubData.language,
+          stars: githubData.stargazers_count,
+          forks: githubData.forks_count,
+        }).returning({ id: repositoriesTable.id });
+        
+        newRepoId = inserted[0].id;      } catch (error: unknown) {
+        // Handle race condition - another request may have inserted the same repo
+        if (error && typeof error === 'object' && 'code' in error && 'constraint' in error && 
+            error.code === '23505' && error.constraint === 'repositories_full_name_unique') {
+          console.log(`Repository ${fullName} was inserted by another request, fetching existing record`);
+          // Fetch the existing repository
+          repoRecord = await db.query.repositories.findFirst({
+            where: eq(repositoriesTable.fullName, fullName),
+          });
+          
+          if (!repoRecord) {
+            throw new Error(`Repository ${fullName} was inserted but could not be retrieved`);
+          }
+          
+          newRepoId = repoRecord.id;
+        } else {
+          throw error; // Re-throw if it's a different error
+        }
+      }
+        if (!repoRecord) {
+        repoRecord = await db.query.repositories.findFirst({
+          where: eq(repositoriesTable.id, newRepoId) 
+        });
+      }
     } else {
       newRepoId = repoRecord.id;
-      // Actualizar datos del repo si ya existía pero no tenía análisis
-       await db.update(repositoriesTable)
+      // Update existing repository data
+      await db.update(repositoriesTable)
         .set({
-          description: mockGithubData.description, // Actualizar por si cambió
-          stars: mockGithubData.stargazers_count,
-          forks: mockGithubData.forks_count,
-          primaryLanguage: mockGithubData.language,
+          description: githubData.description,
+          stars: githubData.stargazers_count,
+          forks: githubData.forks_count,
+          primaryLanguage: githubData.language,
           updatedAt: new Date(),
         })
         .where(eq(repositoriesTable.id, newRepoId));
-        repoRecord = await db.query.repositories.findFirst({ where: eq(repositoriesTable.id, newRepoId) });
-    }
-
-
-    if (!analysisRecord) {
-      console.log(`API: Simulando análisis de IA para ${fullName}`);
-      const mockAiAnalysis = {
-        alternatives: [
-          { name: "(API) Alt 1", url: "https://example.com/alt1-api", description: "API alt desc." },
-        ],
-        category: "Herramientas (API)",
-        analysisContent: `(API) Análisis simulado para ${repoName}.`,
-      };
-      await db.insert(aiAnalysesTable).values({
-        repositoryId: newRepoId,
-        alternatives: mockAiAnalysis.alternatives,
-        category: mockAiAnalysis.category,
-        analysisContent: mockAiAnalysis.analysisContent,
+      
+      repoRecord = await db.query.repositories.findFirst({ 
+        where: eq(repositoriesTable.id, newRepoId) 
       });
-      analysisRecord = await db.query.aiAnalyses.findFirst({ where: eq(aiAnalysesTable.repositoryId, newRepoId) });
     }
+
+    // Generate AI analysis if we don't have one or it's outdated
+    if (!analysisRecord || (Date.now() - new Date(analysisRecord.createdAt).getTime()) / (1000 * 60 * 60 * 24) >= 7) {
+      console.log(`Generating AI analysis for ${fullName}`);
+      
+      try {
+        const aiAnalysis = await aiService.analyzeRepository(githubData);
+        
+        if (analysisRecord) {          // Update existing analysis
+          await db.update(aiAnalysesTable)
+            .set({
+              alternatives: aiAnalysis.alternatives as Alternative[],
+              category: aiAnalysis.category,
+              analysisContent: `${aiAnalysis.summary}\n\nStrengths: ${aiAnalysis.strengths.join(', ')}\n\nConsiderations: ${aiAnalysis.considerations.join(', ')}\n\nUse Case: ${aiAnalysis.useCase}\n\nTarget Audience: ${aiAnalysis.targetAudience}`,
+            })
+            .where(eq(aiAnalysesTable.id, analysisRecord.id));
+        } else {
+          // Insert new analysis
+          await db.insert(aiAnalysesTable).values({
+            repositoryId: newRepoId,
+            alternatives: aiAnalysis.alternatives as Alternative[],
+            category: aiAnalysis.category,
+            analysisContent: `${aiAnalysis.summary}\n\nStrengths: ${aiAnalysis.strengths.join(', ')}\n\nConsiderations: ${aiAnalysis.considerations.join(', ')}\n\nUse Case: ${aiAnalysis.useCase}\n\nTarget Audience: ${aiAnalysis.targetAudience}`,
+          });
+        }
+        
+        analysisRecord = await db.query.aiAnalyses.findFirst({ 
+          where: eq(aiAnalysesTable.repositoryId, newRepoId) 
+        });
+      } catch (aiError) {
+        console.error('AI analysis failed:', aiError);
+        // Create a fallback analysis
+        const fallbackAnalysis = {
+          alternatives: [
+            { 
+              name: "Search GitHub", 
+              url: `https://github.com/search?q=${encodeURIComponent(`${githubData.language || ''} ${githubData.description || githubData.name}`)}`,
+              description: "Search for similar projects on GitHub",
+              reasoning: "Manual search for alternatives"
+            }
+          ],
+          category: githubData.language || "Software",
+          analysisContent: `Analysis for ${githubData.name}: ${githubData.description || 'No description available.'}`
+        };
+        
+        if (analysisRecord) {
+          await db.update(aiAnalysesTable)
+            .set(fallbackAnalysis)
+            .where(eq(aiAnalysesTable.id, analysisRecord.id));
+        } else {
+          await db.insert(aiAnalysesTable).values({
+            repositoryId: newRepoId,
+            ...fallbackAnalysis,
+          });
+        }
+        
+        analysisRecord = await db.query.aiAnalyses.findFirst({ 
+          where: eq(aiAnalysesTable.repositoryId, newRepoId) 
+        });
+      }
+    }
+    
+    return { repoData: repoRecord, analysisData: analysisRecord };
+    
+  } catch (error) {
+    if (error instanceof Error) {
+      throw error;
+    }
+    throw new Error('Unknown error occurred while fetching and analyzing repository');
   }
-  
-  return { repoData: repoRecord, analysisData: analysisRecord };
 }
 
 
@@ -96,17 +176,88 @@ export async function GET(request: NextRequest) {
   const repo = searchParams.get('repo');
 
   if (!owner || !repo) {
-    return NextResponse.json({ message: 'Parámetros owner y repo son requeridos' }, { status: 400 });
+    return NextResponse.json({ 
+      message: 'Parameters owner and repo are required' 
+    }, { status: 400 });
   }
 
   try {
     const data = await fetchAndAnalyze(owner, repo);
+    
     if (!data.repoData) {
-      return NextResponse.json({ message: 'Repositorio no encontrado' }, { status: 404 });
+      return NextResponse.json({ 
+        message: 'Repository not found' 
+      }, { status: 404 });
     }
-    return NextResponse.json(data);
+
+    // Return structured response
+    return NextResponse.json({
+      repository: data.repoData,
+      analysis: data.analysisData,
+      success: true
+    });
   } catch (error) {
-    console.error("Error en API analyze-repo:", error);
-    return NextResponse.json({ message: 'Error interno del servidor' }, { status: 500 });
+    console.error("Error in API analyze-repo:", error);
+    
+    // Handle specific GitHub API errors
+    if (error instanceof Error) {
+      if (error.message.includes('not found')) {
+        return NextResponse.json({ 
+          message: 'Repository not found on GitHub',
+          error: error.message 
+        }, { status: 404 });
+      }
+      
+      if (error.message.includes('rate limit')) {
+        return NextResponse.json({ 
+          message: 'GitHub API rate limit exceeded. Please try again later.',
+          error: error.message 
+        }, { status: 429 });
+      }
+      
+      return NextResponse.json({ 
+        message: 'Error analyzing repository',
+        error: error.message 
+      }, { status: 500 });
+    }
+      return NextResponse.json({ 
+      message: 'Internal server error' 
+    }, { status: 500 });
+  }
+}
+
+export async function POST(request: NextRequest) {
+  try {
+    const body = await request.json();
+    const { owner, repo } = body;
+
+    if (!owner || !repo) {
+      return NextResponse.json(
+        { error: 'Owner and repo parameters are required' },
+        { status: 400 }
+      );
+    }
+    
+    const data = await fetchAndAnalyze(owner, repo);
+    
+    if (!data.repoData) {
+      return NextResponse.json({ 
+        error: 'Repository not found',
+        success: false 
+      }, { status: 404 });
+    }
+
+    // Return structured response matching client expectations
+    return NextResponse.json({
+      repository: data.repoData,
+      analysis: data.analysisData,
+      success: true
+    });
+  } catch (error) {
+    console.error('Error in POST /api/analyze-repo:', error);
+    return NextResponse.json(
+      { error: 'Internal server error' },
+      { status: 500 }
+    );
   }
 }
