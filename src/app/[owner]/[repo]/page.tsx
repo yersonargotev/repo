@@ -27,9 +27,17 @@ async function getRepoAndAnalysis(owner: string, repoName: string) {
       },
       body: JSON.stringify({ owner, repo: repoName }),
       cache: 'no-store', // Disable caching for fresh data
-    });
-
-    if (!response.ok) {
+    });    if (!response.ok) {
+      // If it's a 202 or 500 error, it might be a race condition or analysis in progress
+      if (response.status === 202 || response.status === 500) {
+        console.log(`Analysis may be in progress for ${owner}/${repoName}`);
+        return { 
+          success: false, 
+          error: 'ANALYSIS_IN_PROGRESS',
+          repository: null,
+          analysis: null
+        };
+      }
       throw new Error(`Failed to analyze repository: ${response.statusText}`);
     }
 
@@ -39,9 +47,16 @@ async function getRepoAndAnalysis(owner: string, repoName: string) {
       throw new Error(data.error || 'Failed to analyze repository');
     }
 
-    return data;
-  } catch (error) {
-    console.error('Error fetching repository analysis:', error);
+    return data;    } catch (fetchError) {
+      console.error('Error fetching repository analysis:', fetchError);
+      if (fetchError instanceof Error && fetchError.message.includes('Failed to analyze repository: Internal Server Error')) {
+      return { 
+        success: false, 
+        error: 'ANALYSIS_IN_PROGRESS',
+        repository: null,
+        analysis: null
+      };
+    }
     return null;
   }
 }
@@ -51,9 +66,11 @@ export async function generateMetadata({ params }: { params: Promise<RepoPagePar
   const { owner, repo } = await params;
   const data = await getRepoAndAnalysis(owner, repo);
 
-  if (!data || !data.repository) {
+  // If analysis is in progress or failed, show generic metadata
+  if (!data || !data.repository || data.error === 'ANALYSIS_IN_PROGRESS') {
     return {
-      title: "Repositorio no encontrado",
+      title: `${repo} por ${owner} - GitHub Analyzer`,
+      description: `Analyzing GitHub repository ${owner}/${repo}. Please wait while we generate insights and alternatives.`,
     };
   }
 
@@ -91,11 +108,15 @@ export default async function RepoPage({ params }: { params: Promise<RepoPagePar
   const { owner, repo } = await params;
   const queryClient = new QueryClient();
 
-  // Prefetch the data for better performance
-  await queryClient.prefetchQuery({
-    queryKey: ['repo', owner, repo],
-    queryFn: () => getRepoAndAnalysis(owner, repo),
-  });
+  // Try to prefetch the data for better performance
+  try {
+    await queryClient.prefetchQuery({
+      queryKey: ['repo', owner, repo],
+      queryFn: () => getRepoAndAnalysis(owner, repo),    });
+  } catch {
+    // Don't fail the page if prefetch fails, let the client handle it
+    console.log('Prefetch failed, letting client handle the request');
+  }
   
   const dehydratedState = dehydrate(queryClient);
 

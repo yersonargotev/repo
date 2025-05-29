@@ -62,15 +62,16 @@ async function fetchAndAnalyze(owner: string, repoName: string, forceRefresh: bo
             error.code === '23505' && error.constraint === 'repositories_full_name_unique') {
           console.log(`Repository ${fullName} was inserted by another request, fetching existing record`);
           // Fetch the existing repository
-          repoRecord = await db.query.repositories.findFirst({
+          const existingRepo = await db.query.repositories.findFirst({
             where: eq(repositoriesTable.fullName, fullName),
           });
           
-          if (!repoRecord) {
+          if (!existingRepo) {
             throw new Error(`Repository ${fullName} was inserted but could not be retrieved`);
           }
           
-          newRepoId = repoRecord.id;
+          newRepoId = existingRepo.id;
+          repoRecord = existingRepo;
         } else {
           throw error; // Re-throw if it's a different error
         }
@@ -96,7 +97,17 @@ async function fetchAndAnalyze(owner: string, repoName: string, forceRefresh: bo
       repoRecord = await db.query.repositories.findFirst({ 
         where: eq(repositoriesTable.id, newRepoId) 
       });
-    }    // Generate AI analysis if we don't have one or it's outdated or we're forcing refresh
+    }    // Check if repo exists but no analysis (may indicate analysis in progress by another request)
+    if (repoRecord && !analysisRecord && !forceRefresh) {
+      // Check if this repo was created very recently (within last 2 minutes)
+      const repoAge = Date.now() - new Date(repoRecord.createdAt).getTime();
+      if (repoAge < 2 * 60 * 1000) { // 2 minutes
+        // Likely analysis in progress, throw a specific error
+        throw new Error('ANALYSIS_IN_PROGRESS');
+      }
+    }
+
+    // Generate AI analysis if we don't have one or it's outdated or we're forcing refresh
     if (!analysisRecord || forceRefresh || (Date.now() - new Date(analysisRecord.createdAt).getTime()) / (1000 * 60 * 60 * 24) >= 7) {
       console.log(`${forceRefresh ? 'Force refreshing' : 'Generating'} AI analysis for ${fullName}`);
       
@@ -260,11 +271,33 @@ export async function POST(request: NextRequest) {
       repository: data.repoData,
       analysis: data.analysisData,
       success: true
-    });
-  } catch (error) {
+    });  } catch (error) {
     console.error('Error in POST /api/analyze-repo:', error);
+    
+    // Check if this is an analysis in progress error
+    if (error instanceof Error && error.message === 'ANALYSIS_IN_PROGRESS') {
+      return NextResponse.json({
+        error: 'ANALYSIS_IN_PROGRESS',
+        success: false,
+        message: 'Repository analysis is currently in progress. Please wait a moment and refresh.'
+      }, { status: 202 }); // 202 Accepted - request is being processed
+    }
+    
+    // Check if this is a race condition error during concurrent requests
+    if (error && typeof error === 'object' && 'code' in error && error.code === '23505') {
+      // This is likely a concurrent request scenario - return analysis in progress status
+      return NextResponse.json({
+        error: 'ANALYSIS_IN_PROGRESS',
+        success: false,
+        message: 'Repository analysis is currently in progress. Please wait a moment and refresh.'
+      }, { status: 202 }); // 202 Accepted - request is being processed
+    }
+    
     return NextResponse.json(
-      { error: 'Internal server error' },
+      { 
+        error: 'Internal server error',
+        success: false 
+      },
       { status: 500 }
     );
   }

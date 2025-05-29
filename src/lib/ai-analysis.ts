@@ -69,7 +69,7 @@ export class AIAnalysisService {
         schemaDescription: 'Complete analysis of a GitHub repository including alternatives, categorization, and detailed insights'
       });
 
-      return result.object;    } catch (error: any) {
+      return result.object;    } catch (error: any) { // eslint-disable-line @typescript-eslint/no-explicit-any
       // Log detailed error information for debugging
       console.error('Primary analysis failed:', {
         errorName: error.name,
@@ -102,8 +102,7 @@ export class AIAnalysisService {
             useCase: result.object.useCase || `Development tool in ${repoData.language || 'software development'}`,
             targetAudience: result.object.targetAudience || `Developers and ${repoData.language || 'software'} enthusiasts`
           };          console.info('Recovery successful with fallback schema');
-          return analysisResult;
-        } catch (secondError: any) {
+          return analysisResult;        } catch (secondError: any) { // eslint-disable-line @typescript-eslint/no-explicit-any
           console.error('Recovery attempt also failed:', {
             errorName: secondError.name,
             errorMessage: secondError.message,
@@ -220,8 +219,7 @@ export class AIAnalysisService {
     Focus on providing accurate, helpful information. If uncertain about details, make reasonable estimates based on the repository information provided.
     `;
   }
-
-  private createFallbackAnalysis(repoData: GitHubRepo, error: any): AIAnalysisResult {
+  private createFallbackAnalysis(repoData: GitHubRepo, error: any): AIAnalysisResult { // eslint-disable-line @typescript-eslint/no-explicit-any
     console.warn('Creating fallback analysis due to repeated failures:', error);
     
     return {

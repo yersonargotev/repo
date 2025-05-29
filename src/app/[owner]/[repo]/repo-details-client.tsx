@@ -1,5 +1,6 @@
 "use client";
 
+import AnalysisInProgress from "@/components/analysis-in-progress";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -64,6 +65,7 @@ interface ApiResponse {
   repository: RepoData | null;
   analysis: AnalysisData | null;
   success: boolean;
+  error?: string;
 }
 
 // --- Función de Fetch para el cliente ---
@@ -75,8 +77,18 @@ async function fetchRepoAndAnalysisFromServer(owner: string, repoName: string, f
     },
     body: JSON.stringify({ owner, repo: repoName, forceRefresh }),
   });
-  
-  if (!response.ok) {
+    if (!response.ok) {
+    if (response.status === 202) {
+      // Analysis in progress
+      await response.json(); // Consume the response but don't store it
+      return {
+        repository: null,
+        analysis: null,
+        success: false,
+        error: 'ANALYSIS_IN_PROGRESS'
+      };
+    }
+    
     const errorData = await response.json();
     throw new Error(errorData.error || "Error al obtener datos del repositorio");
   }
@@ -93,6 +105,7 @@ export default function RepoDetailsClient({ owner, repoName }: { owner: string; 
     queryFn: () => fetchRepoAndAnalysisFromServer(owner, repoName),
     staleTime: 1000 * 60 * 5, // 5 minutos de stale time
     refetchOnWindowFocus: false,
+    retry: false, // Don't auto-retry to avoid loops
   });
     // Mutación para forzar re-análisis
   const { mutate: reanalyzeRepo, isPending: isReanalyzing } = useMutation({
@@ -111,6 +124,20 @@ export default function RepoDetailsClient({ owner, repoName }: { owner: string; 
     },
   });
 
+
+  // Check if analysis is in progress
+  if (data?.error === 'ANALYSIS_IN_PROGRESS' || (error && error.message.includes('Failed to analyze repository: Internal Server Error'))) {
+    return (
+      <AnalysisInProgress 
+        owner={owner} 
+        repoName={repoName} 
+        onAnalysisComplete={() => {
+          // Refetch data when analysis is complete
+          refetch();
+        }}
+      />
+    );
+  }
 
   if (isLoading) {
     return (      <div className="container mx-auto p-4 md:p-8 flex justify-center items-center min-h-[calc(100vh-200px)]">
