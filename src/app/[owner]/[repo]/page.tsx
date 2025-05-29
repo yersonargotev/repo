@@ -67,11 +67,10 @@ async function getRepoAndAnalysis(owner: string, repoName: string): Promise<{ re
     stargazers_count: Math.floor(Math.random() * 5000),
     forks_count: Math.floor(Math.random() * 1000),
   };
-
   // Guardar en la BD (simulación)
   let newRepoId: number;
   try {
-    const insertedRepo = await db.insert(repositoriesTable).values({
+    console.log('Attempting to insert repository with data:', {
       owner: mockGithubData.owner.login,
       name: mockGithubData.name,
       fullName: fullName,
@@ -81,9 +80,19 @@ async function getRepoAndAnalysis(owner: string, repoName: string): Promise<{ re
       primaryLanguage: mockGithubData.language,
       stars: mockGithubData.stargazers_count,
       forks: mockGithubData.forks_count,
-    }).returning({ id: repositoriesTable.id });
-    
-    if (!insertedRepo || insertedRepo.length === 0) {
+    });
+      const insertedRepo = await db.insert(repositoriesTable).values({
+      owner: mockGithubData.owner.login,
+      name: mockGithubData.name,
+      fullName: fullName,
+      description: mockGithubData.description,
+      githubUrl: mockGithubData.html_url,
+      avatarUrl: mockGithubData.owner.avatar_url,
+      primaryLanguage: mockGithubData.language,
+      stars: mockGithubData.stargazers_count,
+      forks: mockGithubData.forks_count,
+    }).returning();
+      if (!insertedRepo || insertedRepo.length === 0) {
       throw new Error("No se pudo insertar el repositorio en la BD");
     }
     newRepoId = insertedRepo[0].id;
@@ -134,8 +143,8 @@ async function getRepoAndAnalysis(owner: string, repoName: string): Promise<{ re
 }
 
 // --- Metadata Dinámica ---
-export async function generateMetadata({ params }: { params: RepoPageParams }) {
-  const { owner, repo } = params;
+export async function generateMetadata({ params }: { params: Promise<RepoPageParams> }) {
+  const { owner, repo } = await params;
   // En un caso real, obtendrías solo la info necesaria para el metadata
   // de la BD o una llamada ligera a la API de GitHub si no está en BD.
   // Por ahora, usamos la función completa y extraemos de ahí.
@@ -175,8 +184,8 @@ export async function generateMetadata({ params }: { params: RepoPageParams }) {
 
 
 // --- Componente de Página ---
-export default async function RepoPage({ params }: { params: RepoPageParams }) {
-  const { owner, repo } = params;
+export default async function RepoPage({ params }: { params: Promise<RepoPageParams> }) {
+  const { owner, repo } = await params;
   const queryClient = new QueryClient();
 
   await queryClient.prefetchQuery({

@@ -18,12 +18,11 @@ export const repositories = pgTable('repositories', {
   description: text('description'),
   githubUrl: varchar('github_url', { length: 2048 }).notNull(),
   avatarUrl: varchar('avatar_url', { length: 2048 }),
-  primaryLanguage: varchar('primary_language', { length: 100 }),
-  stars: integer('stars').default(0),
+  primaryLanguage: varchar('primary_language', { length: 100 }),  stars: integer('stars').default(0),
   forks: integer('forks').default(0),
   // Timestamps automáticos
   createdAt: timestamp('created_at').defaultNow().notNull(),
-  updatedAt: timestamp('updated_at').defaultNow().notNull().$onUpdate(() => new Date()),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
 }, (table) => {
   return {
     fullNameIdx: uniqueIndex("full_name_idx").on(table.fullName),
