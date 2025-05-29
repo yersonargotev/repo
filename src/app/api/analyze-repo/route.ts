@@ -40,7 +40,8 @@ async function fetchAndAnalyze(owner: string, repoName: string, forceRefresh: bo
     // Get repository topics if available
     const topics = await githubService.getRepositoryTopics(owner, repoName);
     githubData.topics = topics;
-      // Handle repository creation/update with proper upsert pattern
+
+    // Handle repository creation/update with proper upsert pattern
     if (!repoRecord) {
       // Use INSERT ... ON CONFLICT for better race condition handling
       try {
@@ -105,22 +106,16 @@ async function fetchAndAnalyze(owner: string, repoName: string, forceRefresh: bo
 
     if (!repoRecord) {
       throw new Error(`Failed to create or retrieve repository ${fullName}`);
-    }    // Check if repo exists but no analysis (may indicate analysis in progress by another request)
-    if (repoRecord && !analysisRecord && !forceRefresh) {
-      const repoAge = Date.now() - new Date(repoRecord.createdAt).getTime();
-      if (repoAge < 3 * 60 * 1000) { // 3 minutes - increased from 2 to give AI more time
-        console.log(`Analysis likely in progress for ${fullName}, repo created ${Math.round(repoAge / 1000)}s ago`);
-        throw new Error('ANALYSIS_IN_PROGRESS');
-      }
     }
 
     // Generate AI analysis if we don't have one or it's outdated or we're forcing refresh
     if (!analysisRecord || forceRefresh || (Date.now() - new Date(analysisRecord.createdAt).getTime()) / (1000 * 60 * 60 * 24) >= 7) {
-      console.log(`${forceRefresh ? 'Force refreshing' : 'Generating'} AI analysis for ${fullName}`);
+      console.log(`${forceRefresh ? 'Force refreshing' : analysisRecord ? 'Refreshing outdated' : 'Generating new'} AI analysis for ${fullName}`);
       
       try {
         const aiAnalysis = await aiService.analyzeRepository(githubData);
-          if (analysisRecord) {
+        
+        if (analysisRecord) {
           // Update existing analysis
           await db.update(aiAnalysesTable)
             .set({
@@ -136,7 +131,7 @@ async function fetchAndAnalyze(owner: string, repoName: string, forceRefresh: bo
             })
             .where(eq(aiAnalysesTable.id, analysisRecord.id));
         } else {
-          // Insert new analysis with conflict handling
+          // Insert new analysis with upsert approach to handle race conditions
           try {
             await db.insert(aiAnalysesTable).values({
               repositoryId: repoRecord.id,
@@ -150,10 +145,9 @@ async function fetchAndAnalyze(owner: string, repoName: string, forceRefresh: bo
               analysisContent: `${aiAnalysis.summary}\n\nStrengths: ${aiAnalysis.strengths.join(', ')}\n\nConsiderations: ${aiAnalysis.considerations.join(', ')}\n\nUse Case: ${aiAnalysis.useCase}\n\nTarget Audience: ${aiAnalysis.targetAudience}`,
             });
           } catch (insertError: unknown) {
-            // Handle potential race condition where another process inserted analysis
+            // If insertion fails due to unique constraint, update the existing record
             if (insertError && typeof insertError === 'object' && 'code' in insertError && insertError.code === '23505') {
-              console.log(`Analysis for ${fullName} was inserted by concurrent request, updating existing`);
-              // Try to update existing analysis that was inserted by another process
+              console.log(`Analysis for ${fullName} exists, updating it`);
               const existingAnalysis = await db.query.aiAnalyses.findFirst({
                 where: eq(aiAnalysesTable.repositoryId, repoRecord.id)
               });
@@ -178,6 +172,7 @@ async function fetchAndAnalyze(owner: string, repoName: string, forceRefresh: bo
           }
         }
         
+        // Fetch the final analysis record
         analysisRecord = await db.query.aiAnalyses.findFirst({ 
           where: eq(aiAnalysesTable.repositoryId, repoRecord.id) 
         });
@@ -196,7 +191,8 @@ async function fetchAndAnalyze(owner: string, repoName: string, forceRefresh: bo
           category: githubData.language || "Software",
           analysisContent: `Analysis for ${githubData.name}: ${githubData.description || 'No description available.'}`
         };
-          if (analysisRecord) {
+
+        if (analysisRecord) {
           await db.update(aiAnalysesTable)
             .set(fallbackAnalysis)
             .where(eq(aiAnalysesTable.id, analysisRecord.id));
@@ -239,7 +235,6 @@ async function fetchAndAnalyze(owner: string, repoName: string, forceRefresh: bo
     throw new Error('Unknown error occurred while fetching and analyzing repository');
   }
 }
-
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
@@ -292,7 +287,8 @@ export async function GET(request: NextRequest) {
         error: error.message 
       }, { status: 500 });
     }
-      return NextResponse.json({ 
+
+    return NextResponse.json({ 
       message: 'Internal server error' 
     }, { status: 500 });
   }
@@ -324,17 +320,9 @@ export async function POST(request: NextRequest) {
       repository: data.repoData,
       analysis: data.analysisData,
       success: true
-    });  } catch (error) {
+    });
+  } catch (error) {
     console.error('Error in POST /api/analyze-repo:', error);
-    
-    // Check if this is an analysis in progress error
-    if (error instanceof Error && error.message === 'ANALYSIS_IN_PROGRESS') {
-      return NextResponse.json({
-        error: 'ANALYSIS_IN_PROGRESS',
-        success: false,
-        message: 'Repository analysis is currently in progress. Please wait a moment and refresh.'
-      }, { status: 202 }); // 202 Accepted - request is being processed
-    }
     
     // Check if this is a race condition error during concurrent requests
     if (error && typeof error === 'object' && 'code' in error && error.code === '23505') {
