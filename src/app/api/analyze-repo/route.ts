@@ -1,5 +1,5 @@
+import { aiAnalyses as aiAnalysesTable, repositories as repositoriesTable } from '@/db/schema';
 import { db } from '@/lib/db';
-import { aiAnalyses as aiAnalysesTable, repositories as repositoriesTable } from '@/lib/db/schema';
 import { eq } from 'drizzle-orm';
 import { NextRequest, NextResponse } from 'next/server';
 // Asumimos que tienes una función similar a getRepoAndAnalysis en el backend

@@ -1,20 +1,11 @@
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
+import { aiAnalyses as aiAnalysesTable, repositories as repositoriesTable } from "@/db/schema";
 import { db } from "@/lib/db";
-import { repositories as repositoriesTable, aiAnalyses as aiAnalysesTable } from "@/lib/db/schema";
-import { eq, and } from "drizzle-orm";
-import { Github, GitFork, Star, AlertTriangle, ExternalLink, Lightbulb, Users, BookOpen } from "lucide-react";
-import Link from "next/link";
-import { notFound } from "next/navigation";
-import { Suspense } from "react";
 import {
   HydrationBoundary,
   QueryClient,
   dehydrate,
-} from '@tanstack/react-query'
+} from '@tanstack/react-query';
+import { eq } from "drizzle-orm";
 import RepoDetailsClient from "./repo-details-client";
 
 // --- Tipos para los datos ---

@@ -5,10 +5,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { toast } from "@/components/ui/use-toast";
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, BookOpen, ExternalLink, GitFork, Github, Lightbulb, RefreshCw, Star, Users } from "lucide-react";
 import Link from "next/link";
+import { toast } from "sonner";
 
 // --- Tipos (duplicados para el cliente, idealmente compartir desde un archivo .d.ts o similar) ---
 interface RepoData {
@@ -74,18 +74,11 @@ export default function RepoDetailsClient({ owner, repoName }: { owner: string; 
       return { message: "Re-análisis completado (simulado)" };
     },
     onSuccess: (data) => {
-      toast({
-        title: "Éxito",
-        description: data.message,
-      });
+      toast.success(`Exito: ${data.message}`);
       queryClientHook.invalidateQueries({ queryKey: ['repo', owner, repoName] });
     },
     onError: (error) => {
-      toast({
-        title: "Error en Re-análisis",
-        description: error.message || "Ocurrió un error al re-analizar.",
-        variant: "destructive",
-      });
+      toast.error(`Error al re-analizar: ${error.message || "Ocurrió un error inesperado"}`);
     },
   });
 
