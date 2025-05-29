@@ -39,24 +39,31 @@ async function getRepoAndAnalysis(owner: string, repoName: string) {
         };
       }
       throw new Error(`Failed to analyze repository: ${response.statusText}`);
-    }
-
-    const data = await response.json();
+    }    const data = await response.json();
     
     if (!data.success) {
+      // Don't throw an error for ANALYSIS_IN_PROGRESS, return the response as is
+      if (data.error === 'ANALYSIS_IN_PROGRESS') {
+        return data;
+      }
       throw new Error(data.error || 'Failed to analyze repository');
     }
 
-    return data;    } catch (fetchError) {
-      console.error('Error fetching repository analysis:', fetchError);
-      if (fetchError instanceof Error && fetchError.message.includes('Failed to analyze repository: Internal Server Error')) {
-      return { 
-        success: false, 
-        error: 'ANALYSIS_IN_PROGRESS',
-        repository: null,
-        analysis: null
-      };
+    return data;  } catch (fetchError) {
+    console.error('Error fetching repository analysis:', fetchError);
+    
+    // Handle specific error cases
+    if (fetchError instanceof Error) {
+      if (fetchError.message.includes('Failed to analyze repository: Internal Server Error')) {
+        return { 
+          success: false, 
+          error: 'ANALYSIS_IN_PROGRESS',
+          repository: null,
+          analysis: null
+        };
+      }
     }
+    
     return null;
   }
 }
@@ -64,42 +71,52 @@ async function getRepoAndAnalysis(owner: string, repoName: string) {
 // --- Metadata Dinámica ---
 export async function generateMetadata({ params }: { params: Promise<RepoPageParams> }) {
   const { owner, repo } = await params;
-  const data = await getRepoAndAnalysis(owner, repo);
+  
+  try {
+    const data = await getRepoAndAnalysis(owner, repo);
 
-  // If analysis is in progress or failed, show generic metadata
-  if (!data || !data.repository || data.error === 'ANALYSIS_IN_PROGRESS') {
+    // If analysis is in progress or failed, show generic metadata
+    if (!data || !data.repository || data.error === 'ANALYSIS_IN_PROGRESS') {
+      return {
+        title: `${repo} por ${owner} - GitHub Analyzer`,
+        description: `Analyzing GitHub repository ${owner}/${repo}. Please wait while we generate insights and alternatives.`,
+      };
+    }
+
+    const { repository } = data;
+
+    return {
+      title: `${repository.name} por ${repository.owner} - GitHub Analyzer`,
+      description: repository.description || `Análisis y alternativas para el repositorio de GitHub ${repository.fullName}.`,
+      openGraph: {
+        title: `${repository.name} por ${repository.owner}`,
+        description: repository.description || `Análisis y alternativas para el repositorio de GitHub ${repository.fullName}.`,
+        images: [
+          {
+            url: repository.avatarUrl || `https://via.placeholder.com/1200x630.png?text=${repository.name}`,
+            width: 1200,
+            height: 630,
+            alt: `Avatar de ${repository.owner}`,
+          },
+        ],
+        type: 'article',
+        url: `https://github-repo-analyzer.vercel.app/${owner}/${repo}`,
+      },
+      twitter: {
+        card: 'summary_large_image',
+        title: `${repository.name} por ${repository.owner}`,
+        description: repository.description || `Análisis y alternativas para el repositorio de GitHub ${repository.fullName}.`,
+        images: [repository.avatarUrl || `https://via.placeholder.com/1200x630.png?text=${repository.name}`],
+      },
+    };
+  } catch (error) {
+    // If metadata generation fails, return generic metadata
+    console.error('Error generating metadata:', error);
     return {
       title: `${repo} por ${owner} - GitHub Analyzer`,
       description: `Analyzing GitHub repository ${owner}/${repo}. Please wait while we generate insights and alternatives.`,
     };
   }
-
-  const { repository } = data;
-
-  return {
-    title: `${repository.name} por ${repository.owner} - GitHub Analyzer`,
-    description: repository.description || `Análisis y alternativas para el repositorio de GitHub ${repository.fullName}.`,
-    openGraph: {
-      title: `${repository.name} por ${repository.owner}`,
-      description: repository.description || `Análisis y alternativas para el repositorio de GitHub ${repository.fullName}.`,
-      images: [
-        {
-          url: repository.avatarUrl || `https://via.placeholder.com/1200x630.png?text=${repository.name}`,
-          width: 1200,
-          height: 630,
-          alt: `Avatar de ${repository.owner}`,
-        },
-      ],
-      type: 'article',
-      url: `https://github-repo-analyzer.vercel.app/${owner}/${repo}`,
-    },
-    twitter: {
-      card: 'summary_large_image',
-      title: `${repository.name} por ${repository.owner}`,
-      description: repository.description || `Análisis y alternativas para el repositorio de GitHub ${repository.fullName}.`,
-      images: [repository.avatarUrl || `https://via.placeholder.com/1200x630.png?text=${repository.name}`],
-    },
-  };
 }
 
 
@@ -107,15 +124,15 @@ export async function generateMetadata({ params }: { params: Promise<RepoPagePar
 export default async function RepoPage({ params }: { params: Promise<RepoPageParams> }) {
   const { owner, repo } = await params;
   const queryClient = new QueryClient();
-
   // Try to prefetch the data for better performance
   try {
     await queryClient.prefetchQuery({
       queryKey: ['repo', owner, repo],
-      queryFn: () => getRepoAndAnalysis(owner, repo),    });
-  } catch {
+      queryFn: () => getRepoAndAnalysis(owner, repo),
+    });
+  } catch (error) {
     // Don't fail the page if prefetch fails, let the client handle it
-    console.log('Prefetch failed, letting client handle the request');
+    console.log('Prefetch failed, letting client handle the request:', error);
   }
   
   const dehydratedState = dehydrate(queryClient);
