@@ -68,6 +68,17 @@ export default function HomePage() {
             </Link>
             .
           </p>
+
+          <div className="text-center">
+            <p className="text-sm text-muted-foreground mb-2">
+              ¿Quieres ver qué repositorios ya hemos analizado?
+            </p>
+            <Button variant="outline" asChild>
+              <Link href="/repositories">
+                Ver Repositorios Analizados
+              </Link>
+            </Button>
+          </div>
         </div>
       </div>
     </div>

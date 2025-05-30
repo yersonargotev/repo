@@ -12,9 +12,13 @@ export function SiteHeader() {
           <span className="font-bold sm:inline-block">
             RepoAnalyzer
           </span>
-        </Link>
-        <nav className="flex flex-1 items-center space-x-6 text-sm font-medium">
-          {/* Aquí podrían ir más links de navegación si es necesario */}
+        </Link>        <nav className="flex flex-1 items-center space-x-6 text-sm font-medium">
+          <Link
+            href="/repositories"
+            className="transition-colors hover:text-foreground/80 text-foreground/60"
+          >
+            Repositorios
+          </Link>
         </nav>
         <div className="flex flex-1 items-center justify-end space-x-2">
           <Button variant="ghost" size="icon" asChild>
