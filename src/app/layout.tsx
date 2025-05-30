@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "Github Repo Analyzer",
-  description: "Analize your GitHub repositories with AI",
+  description: "Github Repo Analyzer is a tool to analyze and visualize GitHub repositories.",
 };
 
 export default function RootLayout({

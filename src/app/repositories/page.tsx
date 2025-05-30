@@ -1,13 +1,39 @@
-"use client";
+'use client';
 
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { useRepositories, useRepositoriesStats } from '@/hooks/use-repositories';
-import { AlertCircle, Calendar, ExternalLink, Filter, GitFork, Github, Loader2, Search, Star, X } from 'lucide-react';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
+  useRepositories,
+  useRepositoriesStats,
+} from '@/hooks/use-repositories';
+import {
+  AlertCircle,
+  Calendar,
+  ExternalLink,
+  Filter,
+  GitFork,
+  Github,
+  Loader2,
+  Search,
+  Star,
+  X,
+} from 'lucide-react';
 import Link from 'next/link';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
@@ -16,7 +42,7 @@ export default function RepositoriesPage() {
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
   const [languageFilter, setLanguageFilter] = useState<string>('all');
   const [sortBy, setSortBy] = useState<string>('stars');
-  
+
   const loadMoreRef = useRef<HTMLDivElement>(null);
 
   // Debounce search term
@@ -58,7 +84,7 @@ export default function RepositoriesPage() {
           fetchNextPage();
         }
       },
-      { threshold: 0.1 }
+      { threshold: 0.1 },
     );
 
     const currentRef = loadMoreRef.current;
@@ -101,14 +127,14 @@ export default function RepositoriesPage() {
   // Obtener todos los repositorios de todas las páginas
   const allRepositories = useMemo(() => {
     if (!data?.pages) return [];
-    return data.pages.flatMap(page => page.repositories);
+    return data.pages.flatMap((page) => page.repositories);
   }, [data]);
 
   // Obtener lenguajes disponibles de los repositorios cargados
   const availableLanguages = useMemo(() => {
     const languages = allRepositories
-      .map(repo => repo.primaryLanguage)
-      .filter(Boolean)
+      .map((repo) => repo.primaryLanguage)
+      .filter((lang): lang is string => typeof lang === 'string' && !!lang)
       .filter((lang, index, arr) => arr.indexOf(lang) === index)
       .sort();
     return languages;
@@ -119,7 +145,7 @@ export default function RepositoriesPage() {
     return new Date(date).toLocaleDateString('es-ES', {
       year: 'numeric',
       month: 'short',
-      day: 'numeric'
+      day: 'numeric',
     });
   };
 
@@ -136,26 +162,35 @@ export default function RepositoriesPage() {
     return (
       <div className="container mx-auto px-4 py-8">
         <div className="text-center">
-          <h1 className="text-3xl font-bold mb-8">Repositorios Analizados</h1>
+          <h1 className="text-3xl font-bold mb-8">Analyzed Repositories</h1>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            {[...Array(8)].map((_, i) => (
-              <Card key={i} className="animate-pulse">
+            {[
+              'skeleton1',
+              'skeleton2',
+              'skeleton3',
+              'skeleton4',
+              'skeleton5',
+              'skeleton6',
+              'skeleton7',
+              'skeleton8',
+            ].map((s) => (
+              <Card key={s} className="animate-pulse">
                 <CardHeader>
                   <div className="flex items-center space-x-4">
-                    <div className="w-12 h-12 bg-gray-300 rounded-full"></div>
+                    <div className="w-12 h-12 bg-gray-300 rounded-full" />
                     <div className="space-y-2">
-                      <div className="h-4 bg-gray-300 rounded w-24"></div>
-                      <div className="h-3 bg-gray-300 rounded w-16"></div>
+                      <div className="h-4 bg-gray-300 rounded w-24" />
+                      <div className="h-3 bg-gray-300 rounded w-16" />
                     </div>
                   </div>
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-3">
-                    <div className="h-3 bg-gray-300 rounded"></div>
-                    <div className="h-3 bg-gray-300 rounded w-3/4"></div>
+                    <div className="h-3 bg-gray-300 rounded" />
+                    <div className="h-3 bg-gray-300 rounded w-3/4" />
                     <div className="flex gap-2">
-                      <div className="h-6 bg-gray-300 rounded w-12"></div>
-                      <div className="h-6 bg-gray-300 rounded w-12"></div>
+                      <div className="h-6 bg-gray-300 rounded w-12" />
+                      <div className="h-6 bg-gray-300 rounded w-12" />
                     </div>
                   </div>
                 </CardContent>
@@ -171,18 +206,18 @@ export default function RepositoriesPage() {
     return (
       <div className="container mx-auto px-4 py-8">
         <div className="text-center">
-          <h1 className="text-3xl font-bold mb-8">Repositorios Analizados</h1>
+          <h1 className="text-3xl font-bold mb-8">Analyzed Repositories</h1>
           <Card className="max-w-md mx-auto">
             <CardContent className="pt-6">
               <div className="flex flex-col items-center space-y-4">
                 <AlertCircle className="h-12 w-12 text-destructive" />
-                <p className="text-lg font-medium">Error al cargar repositorios</p>
-                <p className="text-sm text-muted-foreground">
-                  {error instanceof Error ? error.message : 'Error desconocido'}
+                <p className="text-lg font-medium">
+                  Error loading repositories
                 </p>
-                <Button onClick={() => window.location.reload()}>
-                  Reintentar
-                </Button>
+                <p className="text-sm text-muted-foreground">
+                  {error instanceof Error ? error.message : 'Unknown error'}
+                </p>
+                <Button onClick={() => window.location.reload()}>Retry</Button>
               </div>
             </CardContent>
           </Card>
@@ -195,17 +230,17 @@ export default function RepositoriesPage() {
     return (
       <div className="container mx-auto px-4 py-8">
         <div className="text-center">
-          <h1 className="text-3xl font-bold mb-8">Repositorios Analizados</h1>
+          <h1 className="text-3xl font-bold mb-8">Analyzed Repositories</h1>
           <Card className="max-w-md mx-auto">
             <CardContent className="pt-6">
               <div className="flex flex-col items-center space-y-4">
                 <Github className="h-12 w-12 text-muted-foreground" />
-                <p className="text-lg font-medium">No hay repositorios analizados</p>
+                <p className="text-lg font-medium">No analyzed repositories</p>
                 <p className="text-sm text-muted-foreground">
-                  Comienza analizando tu primer repositorio
+                  Start by analyzing your first repository
                 </p>
                 <Button asChild>
-                  <Link href="/">Analizar Repositorio</Link>
+                  <Link href="/">Analyze Repository</Link>
                 </Button>
               </div>
             </CardContent>
@@ -218,42 +253,54 @@ export default function RepositoriesPage() {
   return (
     <div className="container mx-auto px-4 py-8">
       <div className="text-center mb-8">
-        <h1 className="text-4xl font-bold mb-4">Repositorios Analizados</h1>
+        <h1 className="text-4xl font-bold mb-4">Analyzed Repositories</h1>
         <p className="text-lg text-muted-foreground mb-4">
-          {stats?.totalRepositories || allRepositories.length} repositorio{(stats?.totalRepositories || allRepositories.length) !== 1 ? 's' : ''} en la base de datos
+          {stats?.totalRepositories || allRepositories.length} repository
+          {(stats?.totalRepositories || allRepositories.length) !== 1
+            ? 's'
+            : ''}{' '}
+          in the database
         </p>
-        
+
         {stats && (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 max-w-2xl mx-auto mb-6">
             <Card className="p-4">
               <div className="text-center">
-                <p className="text-2xl font-bold text-yellow-600">{formatNumber(stats.totalStars)}</p>
+                <p className="text-2xl font-bold text-yellow-600">
+                  {formatNumber(stats.totalStars)}
+                </p>
                 <p className="text-sm text-muted-foreground">⭐ Total Stars</p>
               </div>
             </Card>
             <Card className="p-4">
               <div className="text-center">
-                <p className="text-2xl font-bold text-blue-600">{formatNumber(stats.totalForks)}</p>
+                <p className="text-2xl font-bold text-blue-600">
+                  {formatNumber(stats.totalForks)}
+                </p>
                 <p className="text-sm text-muted-foreground">🍴 Total Forks</p>
               </div>
             </Card>
             <Card className="p-4">
               <div className="text-center">
-                <p className="text-2xl font-bold text-green-600">{stats.totalLanguages}</p>
-                <p className="text-sm text-muted-foreground">💻 Lenguajes</p>
+                <p className="text-2xl font-bold text-green-600">
+                  {stats.totalLanguages}
+                </p>
+                <p className="text-sm text-muted-foreground">💻 Languages</p>
               </div>
             </Card>
             <Card className="p-4">
               <div className="text-center">
-                <p className="text-2xl font-bold text-purple-600">{stats.topLanguage}</p>
-                <p className="text-sm text-muted-foreground">🏆 Top Lenguaje</p>
+                <p className="text-2xl font-bold text-purple-600">
+                  {stats.topLanguage}
+                </p>
+                <p className="text-sm text-muted-foreground">🏆 Top Language</p>
               </div>
             </Card>
           </div>
         )}
-        
+
         <Button asChild variant="outline">
-          <Link href="/">+ Analizar Nuevo Repositorio</Link>
+          <Link href="/">+ Analyze New Repository</Link>
         </Button>
       </div>
 
@@ -277,7 +324,7 @@ export default function RepositoriesPage() {
             )}
             <Input
               id="search-input"
-              placeholder="Buscar por nombre, owner, descripción... (Ctrl+K)"
+              placeholder="Search by name, owner, description... (Ctrl+K)"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="pl-10 pr-10"
@@ -287,12 +334,12 @@ export default function RepositoriesPage() {
             <Select value={languageFilter} onValueChange={setLanguageFilter}>
               <SelectTrigger className="w-48">
                 <Filter className="h-4 w-4 mr-2" />
-                <SelectValue placeholder="Filtrar por lenguaje" />
+                <SelectValue placeholder="Filter by language" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">Todos los lenguajes</SelectItem>
+                <SelectItem value="all">All Languages</SelectItem>
                 {availableLanguages.map((lang) => (
-                  <SelectItem key={lang} value={lang!}>
+                  <SelectItem key={lang} value={lang}>
                     {lang}
                   </SelectItem>
                 ))}
@@ -300,13 +347,13 @@ export default function RepositoriesPage() {
             </Select>
             <Select value={sortBy} onValueChange={setSortBy}>
               <SelectTrigger className="w-48">
-                <SelectValue placeholder="Ordenar por" />
+                <SelectValue placeholder="Sort by" />
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="stars">⭐ Stars</SelectItem>
                 <SelectItem value="forks">🍴 Forks</SelectItem>
-                <SelectItem value="updated">📅 Actualización</SelectItem>
-                <SelectItem value="name">📝 Nombre</SelectItem>
+                <SelectItem value="updated">📅 Updated</SelectItem>
+                <SelectItem value="name">📝 Name</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -317,9 +364,9 @@ export default function RepositoriesPage() {
       {(debouncedSearchTerm || languageFilter !== 'all') && (
         <div className="mb-6">
           <p className="text-sm text-muted-foreground">
-            Mostrando {allRepositories.length} repositorios
-            {debouncedSearchTerm && ` que coinciden con "${debouncedSearchTerm}"`}
-            {languageFilter !== 'all' && ` en ${languageFilter}`}
+            Showing {allRepositories.length} repositories
+            {debouncedSearchTerm && ` matching "${debouncedSearchTerm}"`}
+            {languageFilter !== 'all' && ` in ${languageFilter}`}
             {isFetching && !isFetchingNextPage && (
               <span className="ml-2">
                 <Loader2 className="h-4 w-4 animate-spin inline" />
@@ -336,18 +383,18 @@ export default function RepositoriesPage() {
             <CardContent className="pt-6">
               <div className="flex flex-col items-center space-y-4">
                 <Search className="h-12 w-12 text-muted-foreground" />
-                <p className="text-lg font-medium">No se encontraron repositorios</p>
+                <p className="text-lg font-medium">No repositories found</p>
                 <p className="text-sm text-muted-foreground">
-                  Intenta con otros términos de búsqueda o filtros
+                  Try different search terms or filters
                 </p>
-                <Button 
-                  variant="outline" 
+                <Button
+                  variant="outline"
                   onClick={() => {
                     setSearchTerm('');
                     setLanguageFilter('all');
                   }}
                 >
-                  Limpiar filtros
+                  Clear Filters
                 </Button>
               </div>
             </CardContent>
@@ -358,8 +405,8 @@ export default function RepositoriesPage() {
       {/* Repository Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
         {allRepositories.map((repo, index) => (
-          <Card 
-            key={repo.id} 
+          <Card
+            key={repo.id}
             className="hover:shadow-lg transition-all duration-200 group animate-in fade-in-0 slide-in-from-bottom-4"
             style={{ animationDelay: `${(index % 12) * 50}ms` }}
           >
@@ -367,8 +414,13 @@ export default function RepositoriesPage() {
               <div className="flex items-start justify-between">
                 <div className="flex items-center space-x-3 min-w-0 flex-1">
                   <Avatar className="h-10 w-10 flex-shrink-0">
-                    <AvatarImage src={repo.avatarUrl || undefined} alt={repo.owner} />
-                    <AvatarFallback>{repo.owner.charAt(0).toUpperCase()}</AvatarFallback>
+                    <AvatarImage
+                      src={repo.avatarUrl || undefined}
+                      alt={repo.owner}
+                    />
+                    <AvatarFallback>
+                      {repo.owner.charAt(0).toUpperCase()}
+                    </AvatarFallback>
                   </Avatar>
                   <div className="min-w-0 flex-1">
                     <CardTitle className="text-sm font-semibold truncate">
@@ -381,7 +433,7 @@ export default function RepositoriesPage() {
                 </div>
                 {repo.isArchived && (
                   <Badge variant="secondary" className="text-xs">
-                    Archivado
+                    Archived
                   </Badge>
                 )}
               </div>
@@ -389,7 +441,7 @@ export default function RepositoriesPage() {
 
             <CardContent className="space-y-4">
               <p className="text-sm text-muted-foreground line-clamp-2 min-h-[2.5rem]">
-                {repo.description || 'Sin descripción disponible'}
+                {repo.description || 'No description available'}
               </p>
 
               <div className="flex items-center justify-between text-sm">
@@ -419,20 +471,26 @@ export default function RepositoriesPage() {
                 </div>
               )}
 
-              {repo.topics && Array.isArray(repo.topics) && repo.topics.length > 0 && (
-                <div className="flex flex-wrap gap-1 max-h-16 overflow-hidden">
-                  {repo.topics.slice(0, 3).map((topic) => (
-                    <Badge key={topic} variant="secondary" className="text-xs">
-                      {topic}
-                    </Badge>
-                  ))}
-                  {repo.topics.length > 3 && (
-                    <Badge variant="secondary" className="text-xs">
-                      +{repo.topics.length - 3}
-                    </Badge>
-                  )}
-                </div>
-              )}
+              {repo.topics &&
+                Array.isArray(repo.topics) &&
+                repo.topics.length > 0 && (
+                  <div className="flex flex-wrap gap-1 max-h-16 overflow-hidden">
+                    {repo.topics.slice(0, 3).map((topic) => (
+                      <Badge
+                        key={topic}
+                        variant="secondary"
+                        className="text-xs"
+                      >
+                        {topic}
+                      </Badge>
+                    ))}
+                    {repo.topics.length > 3 && (
+                      <Badge variant="secondary" className="text-xs">
+                        +{repo.topics.length - 3}
+                      </Badge>
+                    )}
+                  </div>
+                )}
 
               <div className="flex items-center justify-between text-xs text-muted-foreground">
                 <div className="flex items-center space-x-1">
@@ -447,11 +505,15 @@ export default function RepositoriesPage() {
               <div className="flex space-x-2 pt-2">
                 <Button asChild size="sm" className="flex-1">
                   <Link href={`/${repo.owner}/${repo.name}`}>
-                    Ver Análisis
+                    View Analysis
                   </Link>
                 </Button>
                 <Button asChild size="sm" variant="outline">
-                  <Link href={repo.githubUrl} target="_blank" rel="noopener noreferrer">
+                  <Link
+                    href={repo.githubUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
                     <ExternalLink className="h-4 w-4" />
                   </Link>
                 </Button>
@@ -463,11 +525,16 @@ export default function RepositoriesPage() {
 
       {/* Load More Trigger (Invisible) */}
       {hasNextPage && (
-        <div ref={loadMoreRef} className="h-20 flex items-center justify-center mt-8">
+        <div
+          ref={loadMoreRef}
+          className="h-20 flex items-center justify-center mt-8"
+        >
           {isFetchingNextPage && (
             <div className="flex items-center space-x-2">
               <Loader2 className="h-6 w-6 animate-spin" />
-              <span className="text-muted-foreground">Cargando más repositorios...</span>
+              <span className="text-muted-foreground">
+                Loading more repositories...
+              </span>
             </div>
           )}
         </div>
@@ -476,7 +543,9 @@ export default function RepositoriesPage() {
       {/* End Message */}
       {!hasNextPage && allRepositories.length > 0 && (
         <div className="text-center mt-8 py-4">
-          <p className="text-muted-foreground">¡Has visto todos los repositorios disponibles!</p>
+          <p className="text-muted-foreground">
+            You have seen all available repositories!
+          </p>
         </div>
       )}
     </div>

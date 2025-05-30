@@ -17,7 +17,7 @@ export function SiteHeader() {
             href="/repositories"
             className="transition-colors hover:text-foreground/80 text-foreground/60"
           >
-            Repositorios
+            Repositories
           </Link>
         </nav>
         <div className="flex flex-1 items-center justify-end space-x-2">

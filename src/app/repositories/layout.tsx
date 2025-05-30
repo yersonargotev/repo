@@ -1,17 +1,20 @@
-import { Metadata } from 'next';
+import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: 'Repositorios Analizados - GitHub Analyzer',
-  description: 'Explora todos los repositorios de GitHub que hemos analizado con IA para encontrar alternativas y obtener insights.',
+  title: 'Analyzed Repositories - GitHub Analyzer',
+  description:
+    'Explore all GitHub repositories we have analyzed with AI to find alternatives and gain insights.',
   openGraph: {
-    title: 'Repositorios Analizados - GitHub Analyzer',
-    description: 'Explora todos los repositorios de GitHub que hemos analizado con IA para encontrar alternativas y obtener insights.',
+    title: 'Analyzed Repositories - GitHub Analyzer',
+    description:
+      'Explore all GitHub repositories we have analyzed with AI to find alternatives and gain insights.',
     type: 'website',
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Repositorios Analizados - GitHub Analyzer',
-    description: 'Explora todos los repositorios de GitHub que hemos analizado con IA para encontrar alternativas y obtener insights.',
+    title: 'Analyzed Repositories - GitHub Analyzer',
+    description:
+      'Explore all GitHub repositories we have analyzed with AI to find alternatives and gain insights.',
   },
 };
 
