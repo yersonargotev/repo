@@ -6,25 +6,18 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Repository } from '@/db/schema';
+import { useRepositories, useRepositoriesStats } from '@/hooks/use-repositories';
 import { AlertCircle, Calendar, ExternalLink, Filter, GitFork, Github, Loader2, Search, Star, X } from 'lucide-react';
 import Link from 'next/link';
-import { useEffect, useMemo, useState } from 'react';
-
-interface RepositoriesResponse {
-  success: boolean;
-  repositories: Repository[];
-  error?: string;
-}
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 export default function RepositoriesPage() {
-  const [repositories, setRepositories] = useState<Repository[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState('');
   const [languageFilter, setLanguageFilter] = useState<string>('all');
   const [sortBy, setSortBy] = useState<string>('stars');
+  
+  const loadMoreRef = useRef<HTMLDivElement>(null);
 
   // Debounce search term
   useEffect(() => {
@@ -34,27 +27,51 @@ export default function RepositoriesPage() {
 
     return () => clearTimeout(timer);
   }, [searchTerm]);
+
+  // TanStack Query para repositorios con infinite scroll
+  const {
+    data,
+    error,
+    fetchNextPage,
+    hasNextPage,
+    isFetching,
+    isFetchingNextPage,
+    isPending,
+    isError,
+  } = useRepositories({
+    search: debouncedSearchTerm,
+    language: languageFilter,
+    sortBy,
+  });
+
+  // Hook para obtener estadísticas
+  const getStats = useRepositoriesStats();
+  const stats = useMemo(() => getStats(), [data, getStats]);
+
+  // Infinite scroll con Intersection Observer
   useEffect(() => {
-    const fetchRepositories = async () => {
-      try {
-        const response = await fetch('/api/repositories');
-        const data: RepositoriesResponse = await response.json();
-        
-        if (data.success) {
-          setRepositories(data.repositories);
-        } else {
-          setError(data.error || 'Failed to fetch repositories');
+    if (!hasNextPage || isFetchingNextPage) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting) {
+          fetchNextPage();
         }
-      } catch (err) {
-        setError('Failed to fetch repositories');
-        console.error('Error fetching repositories:', err);
-      } finally {
-        setLoading(false);
+      },
+      { threshold: 0.1 }
+    );
+
+    const currentRef = loadMoreRef.current;
+    if (currentRef) {
+      observer.observe(currentRef);
+    }
+
+    return () => {
+      if (currentRef) {
+        observer.unobserve(currentRef);
       }
     };
-
-    fetchRepositories();
-  }, []);
+  }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   // Keyboard shortcuts
   useEffect(() => {
@@ -81,6 +98,22 @@ export default function RepositoriesPage() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
 
+  // Obtener todos los repositorios de todas las páginas
+  const allRepositories = useMemo(() => {
+    if (!data?.pages) return [];
+    return data.pages.flatMap(page => page.repositories);
+  }, [data]);
+
+  // Obtener lenguajes disponibles de los repositorios cargados
+  const availableLanguages = useMemo(() => {
+    const languages = allRepositories
+      .map(repo => repo.primaryLanguage)
+      .filter(Boolean)
+      .filter((lang, index, arr) => arr.indexOf(lang) === index)
+      .sort();
+    return languages;
+  }, [allRepositories]);
+
   const formatDate = (date: string | Date | null) => {
     if (!date) return 'N/A';
     return new Date(date).toLocaleDateString('es-ES', {
@@ -89,6 +122,7 @@ export default function RepositoriesPage() {
       day: 'numeric'
     });
   };
+
   const formatNumber = (num: number | null) => {
     if (num === null || num === undefined) return '0';
     if (num >= 1000) {
@@ -97,72 +131,8 @@ export default function RepositoriesPage() {
     return num.toString();
   };
 
-  // Calculate stats
-  const stats = useMemo(() => {
-    if (repositories.length === 0) return null;
-    
-    const totalStars = repositories.reduce((sum, repo) => sum + (repo.stars || 0), 0);
-    const totalForks = repositories.reduce((sum, repo) => sum + (repo.forks || 0), 0);
-    const languages = repositories
-      .map(repo => repo.primaryLanguage)
-      .filter(Boolean)
-      .reduce((acc, lang) => {
-        acc[lang!] = (acc[lang!] || 0) + 1;
-        return acc;
-      }, {} as Record<string, number>);
-    
-    const topLanguage = Object.entries(languages)
-      .sort(([,a], [,b]) => b - a)[0];
-    
-    return {
-      totalStars,
-      totalForks,
-      topLanguage: topLanguage ? topLanguage[0] : 'N/A',
-      totalLanguages: Object.keys(languages).length
-    };
-  }, [repositories]);
-  const availableLanguages = useMemo(() => {
-    const languages = repositories
-      .map(repo => repo.primaryLanguage)
-      .filter(Boolean)
-      .filter((lang, index, arr) => arr.indexOf(lang) === index)
-      .sort();
-    return languages;
-  }, [repositories]);
-  // Filter and sort repositories
-  const filteredAndSortedRepos = useMemo(() => {
-    let filtered = repositories.filter(repo => {
-      const matchesSearch = !debouncedSearchTerm || 
-        repo.name.toLowerCase().includes(debouncedSearchTerm.toLowerCase()) ||
-        repo.owner.toLowerCase().includes(debouncedSearchTerm.toLowerCase()) ||
-        (repo.description && repo.description.toLowerCase().includes(debouncedSearchTerm.toLowerCase())) ||
-        (repo.topics && repo.topics.some(topic => topic.toLowerCase().includes(debouncedSearchTerm.toLowerCase())));
-      
-      const matchesLanguage = languageFilter === 'all' || repo.primaryLanguage === languageFilter;
-      
-      return matchesSearch && matchesLanguage;
-    });
-
-    // Sort repositories
-    filtered.sort((a, b) => {
-      switch (sortBy) {
-        case 'stars':
-          return (b.stars || 0) - (a.stars || 0);
-        case 'forks':
-          return (b.forks || 0) - (a.forks || 0);
-        case 'updated':
-          return new Date(b.githubUpdatedAt || 0).getTime() - new Date(a.githubUpdatedAt || 0).getTime();
-        case 'name':
-          return a.name.toLowerCase().localeCompare(b.name.toLowerCase());
-        default:
-          return 0;
-      }
-    });
-
-    return filtered;
-  }, [repositories, debouncedSearchTerm, languageFilter, sortBy]);
-
-  if (loading) {
+  // Estados de carga
+  if (isPending) {
     return (
       <div className="container mx-auto px-4 py-8">
         <div className="text-center">
@@ -197,7 +167,7 @@ export default function RepositoriesPage() {
     );
   }
 
-  if (error) {
+  if (isError) {
     return (
       <div className="container mx-auto px-4 py-8">
         <div className="text-center">
@@ -207,7 +177,9 @@ export default function RepositoriesPage() {
               <div className="flex flex-col items-center space-y-4">
                 <AlertCircle className="h-12 w-12 text-destructive" />
                 <p className="text-lg font-medium">Error al cargar repositorios</p>
-                <p className="text-sm text-muted-foreground">{error}</p>
+                <p className="text-sm text-muted-foreground">
+                  {error instanceof Error ? error.message : 'Error desconocido'}
+                </p>
                 <Button onClick={() => window.location.reload()}>
                   Reintentar
                 </Button>
@@ -218,7 +190,8 @@ export default function RepositoriesPage() {
       </div>
     );
   }
-  if (repositories.length === 0) {
+
+  if (allRepositories.length === 0 && !isFetching) {
     return (
       <div className="container mx-auto px-4 py-8">
         <div className="text-center">
@@ -243,10 +216,11 @@ export default function RepositoriesPage() {
   }
 
   return (
-    <div className="container mx-auto px-4 py-8">      <div className="text-center mb-8">
+    <div className="container mx-auto px-4 py-8">
+      <div className="text-center mb-8">
         <h1 className="text-4xl font-bold mb-4">Repositorios Analizados</h1>
         <p className="text-lg text-muted-foreground mb-4">
-          {repositories.length} repositorio{repositories.length !== 1 ? 's' : ''} en la base de datos
+          {stats?.totalRepositories || allRepositories.length} repositorio{(stats?.totalRepositories || allRepositories.length) !== 1 ? 's' : ''} en la base de datos
         </p>
         
         {stats && (
@@ -285,7 +259,8 @@ export default function RepositoriesPage() {
 
       {/* Search and Filter Controls */}
       <div className="mb-8 space-y-4">
-        <div className="flex flex-col md:flex-row gap-4">          <div className="relative flex-1">
+        <div className="flex flex-col md:flex-row gap-4">
+          <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
             {searchTerm !== debouncedSearchTerm && (
               <Loader2 className="absolute right-10 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4 animate-spin" />
@@ -302,7 +277,7 @@ export default function RepositoriesPage() {
             )}
             <Input
               id="search-input"
-              placeholder="Buscar por nombre, owner, descripción o topics... (Ctrl+K)"
+              placeholder="Buscar por nombre, owner, descripción... (Ctrl+K)"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
               className="pl-10 pr-10"
@@ -336,19 +311,26 @@ export default function RepositoriesPage() {
             </Select>
           </div>
         </div>
-      </div>      {/* Results Summary */}
+      </div>
+
+      {/* Results Summary */}
       {(debouncedSearchTerm || languageFilter !== 'all') && (
         <div className="mb-6">
           <p className="text-sm text-muted-foreground">
-            Mostrando {filteredAndSortedRepos.length} de {repositories.length} repositorios
+            Mostrando {allRepositories.length} repositorios
             {debouncedSearchTerm && ` que coinciden con "${debouncedSearchTerm}"`}
             {languageFilter !== 'all' && ` en ${languageFilter}`}
+            {isFetching && !isFetchingNextPage && (
+              <span className="ml-2">
+                <Loader2 className="h-4 w-4 animate-spin inline" />
+              </span>
+            )}
           </p>
         </div>
       )}
 
       {/* No Results */}
-      {filteredAndSortedRepos.length === 0 && repositories.length > 0 && (
+      {allRepositories.length === 0 && !isFetching && (
         <div className="text-center py-12">
           <Card className="max-w-md mx-auto">
             <CardContent className="pt-6">
@@ -371,12 +353,15 @@ export default function RepositoriesPage() {
             </CardContent>
           </Card>
         </div>
-      )}      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-        {filteredAndSortedRepos.map((repo, index) => (
+      )}
+
+      {/* Repository Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+        {allRepositories.map((repo, index) => (
           <Card 
             key={repo.id} 
             className="hover:shadow-lg transition-all duration-200 group animate-in fade-in-0 slide-in-from-bottom-4"
-            style={{ animationDelay: `${index * 50}ms` }}
+            style={{ animationDelay: `${(index % 12) * 50}ms` }}
           >
             <CardHeader className="pb-3">
               <div className="flex items-start justify-between">
@@ -475,6 +460,25 @@ export default function RepositoriesPage() {
           </Card>
         ))}
       </div>
+
+      {/* Load More Trigger (Invisible) */}
+      {hasNextPage && (
+        <div ref={loadMoreRef} className="h-20 flex items-center justify-center mt-8">
+          {isFetchingNextPage && (
+            <div className="flex items-center space-x-2">
+              <Loader2 className="h-6 w-6 animate-spin" />
+              <span className="text-muted-foreground">Cargando más repositorios...</span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* End Message */}
+      {!hasNextPage && allRepositories.length > 0 && (
+        <div className="text-center mt-8 py-4">
+          <p className="text-muted-foreground">¡Has visto todos los repositorios disponibles!</p>
+        </div>
+      )}
     </div>
   );
 }

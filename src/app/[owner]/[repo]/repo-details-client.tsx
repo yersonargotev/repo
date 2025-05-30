@@ -6,9 +6,11 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import { useInvalidateRepositories } from "@/hooks/use-repositories";
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { AlertTriangle, BookOpen, ExternalLink, GitFork, Github, Lightbulb, RefreshCw, Star, Users } from "lucide-react";
 import Link from "next/link";
+import { useEffect, useRef } from "react";
 import { toast } from "sonner";
 
 // --- Tipos (actualizados para coincidir con el nuevo API) ---
@@ -99,6 +101,8 @@ async function fetchRepoAndAnalysisFromServer(owner: string, repoName: string, f
 // --- Componente Cliente ---
 export default function RepoDetailsClient({ owner, repoName }: { owner: string; repoName: string }) {
   const queryClientHook = useQueryClient();
+  const invalidateRepositories = useInvalidateRepositories();
+  const hasInvalidatedRef = useRef(false);
 
   const { data, isLoading, error, isFetching, refetch } = useQuery<ApiResponse, Error>({
     queryKey: ['repo', owner, repoName],
@@ -107,7 +111,14 @@ export default function RepoDetailsClient({ owner, repoName }: { owner: string; 
     refetchOnWindowFocus: false,
     retry: false, // Don't auto-retry to avoid loops
   });
-    // Mutación para forzar re-análisis
+
+  // Invalidate repositories cache when a new repository is successfully analyzed
+  useEffect(() => {
+    if (data?.repository && data?.analysis && !hasInvalidatedRef.current) {
+      invalidateRepositories();
+      hasInvalidatedRef.current = true;
+    }
+  }, [data, invalidateRepositories]);// Mutación para forzar re-análisis
   const { mutate: reanalyzeRepo, isPending: isReanalyzing } = useMutation({
     mutationFn: async () => {
       // Force fresh analysis by calling the API with forceRefresh flag
@@ -117,13 +128,14 @@ export default function RepoDetailsClient({ owner, repoName }: { owner: string; 
     onSuccess: (result) => {
       // Update the query cache with new data
       queryClientHook.setQueryData(['repo', owner, repoName], result);
+      // Invalidate repositories cache to refresh the list
+      invalidateRepositories();
       toast.success("¡Re-análisis completado exitosamente!");
     },
     onError: (error) => {
       toast.error(`Error durante el re-análisis: ${error.message || "Ocurrió un error inesperado"}`);
     },
   });
-
 
   // Check if analysis is in progress
   if (data?.error === 'ANALYSIS_IN_PROGRESS' || (error && error.message.includes('Failed to analyze repository: Internal Server Error'))) {
@@ -134,6 +146,8 @@ export default function RepoDetailsClient({ owner, repoName }: { owner: string; 
         onAnalysisComplete={() => {
           // Refetch data when analysis is complete
           refetch();
+          // Invalidate repositories cache to show the new repository
+          invalidateRepositories();
         }}
       />
     );
