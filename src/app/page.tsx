@@ -58,7 +58,7 @@ export default function HomePage() {
             </Button>
           </form>
 
-          <p className="px-8 text-center text-sm text-muted-foreground">
+          <p className="px-8 text-center text-sm text-muted-foreground flex justify-center gap-1">
             O prueba con un ejemplo:
             <Link
               href="/microsoft/vscode"
