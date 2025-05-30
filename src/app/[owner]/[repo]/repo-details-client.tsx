@@ -330,81 +330,103 @@ export default function RepoDetailsClient({ owner, repoName }: { owner: string; 
             )}
           </CardContent>
         </Card>
-      </section>
-
-      {/* Alternatives Section */}
+      </section>      {/* Alternatives Section */}
       <section className="mb-8">
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center text-2xl">
-              <Users className="mr-3 h-6 w-6 text-purple-500" />
-              Suggested Alternatives
-            </CardTitle>
-            <CardDescription>
-              Discover similar projects and alternatives that might fit your needs.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {analysisData?.alternatives && analysisData.alternatives.length > 0 ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                {analysisData.alternatives.map((alt: Alternative, index: number) => (
-                  <Card key={index} className="hover:shadow-md transition-shadow border-muted">
-                    <CardContent className="p-4">
-                      <div className="space-y-3">
-                        <div className="flex items-start justify-between">
-                          <Link href={alt.url} target="_blank" rel="noopener noreferrer" 
-                                className="font-semibold text-primary hover:underline flex items-center group">
-                            {alt.name} 
-                            <ExternalLink className="ml-1 h-4 w-4 opacity-0 group-hover:opacity-100 transition-opacity" />
-                          </Link>
-                          <div className="flex flex-col items-end gap-1">
-                            {alt.category && (
-                              <Badge variant="secondary" className="text-xs">{alt.category}</Badge>
-                            )}
-                            {alt.stars && (
-                              <div className="flex items-center text-xs text-muted-foreground">
-                                <Star className="h-3 w-3 text-yellow-400 mr-1" />
-                                {alt.stars.toLocaleString()}
-                              </div>
-                            )}
-                          </div>
+        <div className="mb-6">
+          <div className="flex items-center mb-2">
+            <Users className="mr-3 h-7 w-7 text-purple-500" />
+            <h2 className="text-2xl font-bold tracking-tight">Suggested Alternatives</h2>
+          </div>
+          <p className="text-muted-foreground">
+            Discover similar projects and alternatives that might fit your needs.
+          </p>
+        </div>
+
+        {analysisData?.alternatives && analysisData.alternatives.length > 0 ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-6">
+            {analysisData.alternatives.map((alt: Alternative, index: number) => (
+              <Card key={index} className="group hover:shadow-xl hover:shadow-purple-500/10 transition-all duration-300 border-2 hover:border-purple-200 dark:hover:border-purple-800 bg-gradient-to-br from-background to-muted/30 overflow-hidden">
+                <CardContent className="p-0">
+                  {/* Header with gradient background */}
+                  <div className="bg-gradient-to-r from-purple-500/10 to-blue-500/10 p-4 border-b">
+                    <div className="flex items-start justify-between mb-2">
+                      <div className="flex-1 min-w-0">
+                        <Link href={alt.url} target="_blank" rel="noopener noreferrer" 
+                              className="font-bold text-lg text-foreground hover:text-purple-600 dark:hover:text-purple-400 flex items-center group/link transition-colors line-clamp-1">
+                          <span className="truncate">{alt.name}</span>
+                          <ExternalLink className="ml-2 h-4 w-4 opacity-0 group-hover/link:opacity-100 transition-opacity flex-shrink-0" />
+                        </Link>
+                      </div>
+                    </div>
+                    
+                    <div className="flex items-center justify-between">
+                      {alt.category && (
+                        <Badge variant="secondary" className="text-xs font-medium bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200">
+                          {alt.category}
+                        </Badge>
+                      )}
+                      {alt.stars && (
+                        <div className="flex items-center text-sm font-medium text-amber-600 dark:text-amber-400">
+                          <Star className="h-4 w-4 mr-1 fill-current" />
+                          <span>{alt.stars.toLocaleString()}</span>
                         </div>
-                        
-                        {alt.description && (
-                          <p className="text-sm text-muted-foreground leading-relaxed">{alt.description}</p>
-                        )}
-                        
-                        {alt.reasoning && (
-                          <div className="bg-muted/50 rounded-md p-3">
-                            <p className="text-xs text-muted-foreground italic leading-relaxed">
-                              <strong>Why this alternative:</strong> {alt.reasoning}
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Content */}
+                  <div className="p-4 space-y-4">
+                    {alt.description && (
+                      <div>
+                        <p className="text-sm text-muted-foreground leading-relaxed line-clamp-3">
+                          {alt.description}
+                        </p>
+                      </div>
+                    )}
+                    
+                    {alt.reasoning && (
+                      <div className="bg-gradient-to-r from-purple-50 to-blue-50 dark:from-purple-950/20 dark:to-blue-950/20 rounded-lg p-3 border border-purple-100 dark:border-purple-900">
+                        <div className="flex items-start gap-2">
+                          <Lightbulb className="h-4 w-4 text-purple-500 mt-0.5 flex-shrink-0" />
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs font-medium text-purple-700 dark:text-purple-300 mb-1">
+                              Why this alternative:
+                            </p>
+                            <p className="text-xs text-purple-600 dark:text-purple-400 leading-relaxed">
+                              {alt.reasoning}
                             </p>
                           </div>
-                        )}
-                        
-                        {alt.githubUrl && alt.githubUrl !== alt.url && (
-                          <Link href={alt.githubUrl} target="_blank" rel="noopener noreferrer" 
-                                className="text-xs text-muted-foreground hover:text-primary hover:underline flex items-center">
-                            <Github className="h-3 w-3 mr-1" />
-                            View on GitHub
-                          </Link>
-                        )}
+                        </div>
                       </div>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            ) : (
-              <div className="text-center py-8">
-                <Users className="h-12 w-12 text-muted-foreground/50 mx-auto mb-4" />
-                <p className="text-muted-foreground">
-                  {isFetching ? 'Searching for alternatives...' : 'No alternatives found or have not been analyzed yet.'}
-                </p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </section>      {/* Footer */}
+                    )}
+                  </div>
+
+                  {/* Footer */}
+                  {alt.githubUrl && alt.githubUrl !== alt.url && (
+                    <div className="px-4 pb-4">
+                      <Link href={alt.githubUrl} target="_blank" rel="noopener noreferrer" 
+                            className="inline-flex items-center text-xs text-muted-foreground hover:text-primary hover:underline transition-colors">
+                        <Github className="h-3 w-3 mr-1" />
+                        View on GitHub
+                      </Link>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        ) : (
+          <Card className="border-dashed border-2 border-muted-foreground/25">
+            <CardContent className="text-center py-12">
+              <Users className="h-16 w-16 text-muted-foreground/30 mx-auto mb-4" />
+              <h3 className="text-lg font-semibold mb-2">No Alternatives Found</h3>
+              <p className="text-muted-foreground max-w-md mx-auto">
+                {isFetching ? 'Searching for alternatives...' : 'No alternatives have been analyzed yet. Try re-analyzing the repository to discover similar projects.'}
+              </p>
+            </CardContent>
+          </Card>
+        )}
+      </section>{/* Footer */}
       <footer className="mt-12 pt-8 border-t border-border">
         <div className="flex flex-col sm:flex-row justify-between items-center text-sm text-muted-foreground">
           <div className="mb-2 sm:mb-0">
