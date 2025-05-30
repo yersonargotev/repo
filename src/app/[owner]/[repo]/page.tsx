@@ -27,7 +27,9 @@ async function getRepoAndAnalysis(owner: string, repoName: string) {
       },
       body: JSON.stringify({ owner, repo: repoName }),
       cache: 'no-store', // Disable caching for fresh data
-    });    if (!response.ok) {
+    });
+
+    if (!response.ok) {
       // If it's a 202 or 500 error, it might be a race condition or analysis in progress
       if (response.status === 202 || response.status === 500) {
         console.log(`Analysis may be in progress for ${owner}/${repoName}`);
@@ -39,7 +41,9 @@ async function getRepoAndAnalysis(owner: string, repoName: string) {
         };
       }
       throw new Error(`Failed to analyze repository: ${response.statusText}`);
-    }    const data = await response.json();
+    }
+
+    const data = await response.json();
     
     if (!data.success) {
       // Don't throw an error for ANALYSIS_IN_PROGRESS, return the response as is
@@ -49,7 +53,8 @@ async function getRepoAndAnalysis(owner: string, repoName: string) {
       throw new Error(data.error || 'Failed to analyze repository');
     }
 
-    return data;  } catch (fetchError) {
+    return data;
+  } catch (fetchError) {
     console.error('Error fetching repository analysis:', fetchError);
     
     // Handle specific error cases
@@ -123,16 +128,33 @@ export async function generateMetadata({ params }: { params: Promise<RepoPagePar
 // --- Componente de Página ---
 export default async function RepoPage({ params }: { params: Promise<RepoPageParams> }) {
   const { owner, repo } = await params;
-  const queryClient = new QueryClient();
-  // Try to prefetch the data for better performance
+  
+  // Crear un QueryClient dedicado para esta página
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: {
+        staleTime: 60 * 1000, // 1 minuto
+        gcTime: 1000 * 60 * 60 * 24, // 24 horas
+      },
+    },
+  });
+
+  // Intentar prefetch de datos - no fallar la página si esto falla
   try {
     await queryClient.prefetchQuery({
       queryKey: ['repo', owner, repo],
       queryFn: () => getRepoAndAnalysis(owner, repo),
+      // No permitir que queries fallidas se mantengan en cache por mucho tiempo
+      staleTime: 0,
+      gcTime: 1000 * 60, // 1 minuto para errores
     });
   } catch (error) {
-    // Don't fail the page if prefetch fails, let the client handle it
-    console.log('Prefetch failed, letting client handle the request:', error);
+    // Log del error pero no fallar la página
+    console.log('Prefetch failed, client will handle the request:', {
+      owner,
+      repo,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
   }
   
   const dehydratedState = dehydrate(queryClient);

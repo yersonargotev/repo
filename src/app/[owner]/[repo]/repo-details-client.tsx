@@ -108,8 +108,20 @@ export default function RepoDetailsClient({ owner, repoName }: { owner: string; 
     queryKey: ['repo', owner, repoName],
     queryFn: () => fetchRepoAndAnalysisFromServer(owner, repoName),
     staleTime: 1000 * 60 * 5, // 5 minutos de stale time
+    gcTime: 1000 * 60 * 60 * 24, // 24 horas
     refetchOnWindowFocus: false,
-    retry: false, // Don't auto-retry to avoid loops
+    retry: (failureCount, error) => {
+      // No reintentar si es un error conocido de análisis en progreso
+      if (error?.message?.includes('ANALYSIS_IN_PROGRESS')) {
+        return false;
+      }
+      // No reintentar errores 4xx
+      if (error && typeof error === 'object' && 'status' in error) {
+        const status = error.status as number;
+        if (status >= 400 && status < 500) return false;
+      }
+      return failureCount < 3;
+    },
   });
 
   // Invalidate repositories cache when a new repository is successfully analyzed
