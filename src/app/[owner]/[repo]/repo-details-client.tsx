@@ -229,69 +229,76 @@ export default function RepoDetailsClient({ owner, repoName }: { owner: string; 
             <span>{forks?.toLocaleString() || 0} forks</span>
           </div>
         </div>
-      </header>
+      </header>      <Separator className="my-8" />
 
-      <Separator className="my-8" />
-
-      {/* Contenido Principal: Análisis y Alternativas */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-        <div className="md:col-span-2 space-y-6">
-          <Card>            <CardHeader>
-              <CardTitle className="flex items-center text-xl">
-                <Lightbulb className="mr-2 h-5 w-5 text-yellow-400" />
-                AI Analysis
-              </CardTitle>
-              <CardDescription>
-                A detailed summary and insights about this repository.
-                 <Button 
-                    variant="ghost" 
-                    size="sm" 
-                    onClick={() => reanalyzeRepo()} 
-                    disabled={isReanalyzing || isFetching}
-                    className="ml-2"
-                  >
-                    <RefreshCw className={`mr-1 h-3 w-3 ${isReanalyzing || isFetching ? 'animate-spin' : ''}`} />
-                    {isReanalyzing ? 'Re-analyzing...' : (isFetching ? 'Updating...' : 'Re-analyze')}
-                  </Button>
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              {isFetching && !isLoading && <p className="text-sm text-muted-foreground mb-2">Updating analysis...</p>}
-              
-              {/* Enhanced Analysis Display */}
-              {analysisData ? (
-                <div className="space-y-4">
-                  {/* Summary */}
-                  {analysisData.summary && (
-                    <div>
-                      <h4 className="font-semibold mb-2">Summary</h4>
-                      <p className="text-sm text-muted-foreground">{analysisData.summary}</p>
-                    </div>
-                  )}
-                  
+      {/* AI Analysis Section */}
+      <section className="mb-8">
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center text-2xl">
+              <Lightbulb className="mr-3 h-6 w-6 text-yellow-400" />
+              AI Analysis
+              {analysisData?.category && (
+                <Badge variant="outline" className="ml-4 text-sm px-3 py-1">
+                  <BookOpen className="mr-1 h-4 w-4 text-green-500" />
+                  {analysisData.category}
+                </Badge>
+              )}
+            </CardTitle>
+            <CardDescription className="flex items-center justify-between">
+              <span>A detailed summary and insights about this repository.</span>
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                onClick={() => reanalyzeRepo()} 
+                disabled={isReanalyzing || isFetching}
+                className="ml-2"
+              >
+                <RefreshCw className={`mr-1 h-3 w-3 ${isReanalyzing || isFetching ? 'animate-spin' : ''}`} />
+                {isReanalyzing ? 'Re-analyzing...' : (isFetching ? 'Updating...' : 'Re-analyze')}
+              </Button>
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {isFetching && !isLoading && <p className="text-sm text-muted-foreground mb-4">Updating analysis...</p>}
+            
+            {/* Enhanced Analysis Display */}
+            {analysisData ? (
+              <div className="space-y-6">
+                {/* Summary */}
+                {analysisData.summary && (
+                  <div>
+                    <h4 className="font-semibold mb-3 text-lg">Summary</h4>
+                    <p className="text-muted-foreground leading-relaxed">{analysisData.summary}</p>
+                  </div>
+                )}
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   {/* Use Case */}
                   {analysisData.useCase && (
                     <div>
-                      <h4 className="font-semibold mb-2">Primary Use Case</h4>
-                      <p className="text-sm text-muted-foreground">{analysisData.useCase}</p>
+                      <h4 className="font-semibold mb-3">Primary Use Case</h4>
+                      <p className="text-sm text-muted-foreground leading-relaxed">{analysisData.useCase}</p>
                     </div>
                   )}
                   
                   {/* Target Audience */}
                   {analysisData.targetAudience && (
                     <div>
-                      <h4 className="font-semibold mb-2">Target Audience</h4>
-                      <p className="text-sm text-muted-foreground">{analysisData.targetAudience}</p>
+                      <h4 className="font-semibold mb-3">Target Audience</h4>
+                      <p className="text-sm text-muted-foreground leading-relaxed">{analysisData.targetAudience}</p>
                     </div>
                   )}
-                  
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   {/* Strengths */}
                   {analysisData.strengths && analysisData.strengths.length > 0 && (
                     <div>
-                      <h4 className="font-semibold mb-2">Key Strengths</h4>
-                      <ul className="list-disc list-inside text-sm text-muted-foreground space-y-1">
+                      <h4 className="font-semibold mb-3 text-green-700 dark:text-green-400">Key Strengths</h4>
+                      <ul className="list-disc list-inside text-sm text-muted-foreground space-y-2">
                         {analysisData.strengths.map((strength, index) => (
-                          <li key={index}>{strength}</li>
+                          <li key={index} className="leading-relaxed">{strength}</li>
                         ))}
                       </ul>
                     </div>
@@ -300,104 +307,113 @@ export default function RepoDetailsClient({ owner, repoName }: { owner: string; 
                   {/* Considerations */}
                   {analysisData.considerations && analysisData.considerations.length > 0 && (
                     <div>
-                      <h4 className="font-semibold mb-2">Considerations</h4>
-                      <ul className="list-disc list-inside text-sm text-muted-foreground space-y-1">
+                      <h4 className="font-semibold mb-3 text-orange-700 dark:text-orange-400">Considerations</h4>
+                      <ul className="list-disc list-inside text-sm text-muted-foreground space-y-2">
                         {analysisData.considerations.map((consideration, index) => (
-                          <li key={index}>{consideration}</li>
+                          <li key={index} className="leading-relaxed">{consideration}</li>
                         ))}
                       </ul>
                     </div>
                   )}
-                  
-                  {/* Fallback to legacy analysis content */}
-                  {!analysisData.summary && analysisData.analysisContent && (
-                    <article className="prose prose-sm sm:prose lg:prose-lg dark:prose-invert max-w-none" 
-                             dangerouslySetInnerHTML={{ __html: analysisData.analysisContent.replace(/\n/g, '<br />') }} />
-                  )}
                 </div>
-              ) : (
-                <p className="text-muted-foreground">
-                  {isFetching ? 'Loading analysis...' : 'AI analysis for this repository is not yet available or is in progress.'}
-                </p>
-              )}
-            </CardContent>
-          </Card>
-        </div>
+                
+                {/* Fallback to legacy analysis content */}
+                {!analysisData.summary && analysisData.analysisContent && (
+                  <article className="prose prose-sm sm:prose lg:prose-lg dark:prose-invert max-w-none" 
+                           dangerouslySetInnerHTML={{ __html: analysisData.analysisContent.replace(/\n/g, '<br />') }} />
+                )}
+              </div>
+            ) : (
+              <p className="text-muted-foreground">
+                {isFetching ? 'Loading analysis...' : 'AI analysis for this repository is not yet available or is in progress.'}
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      </section>
 
-        <aside className="space-y-6">
-          {analysisData?.category && (
-            <Card>            <CardHeader>
-              <CardTitle className="flex items-center text-lg">
-                <BookOpen className="mr-2 h-5 w-5 text-green-500" />
-                Category
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <Badge variant="outline" className="text-md px-3 py-1">{analysisData.category}</Badge>
-            </CardContent>
-            </Card>
-          )}
-
-          <Card>            <CardHeader>
-              <CardTitle className="flex items-center text-lg">
-                <Users className="mr-2 h-5 w-5 text-purple-500" />
-                Suggested Alternatives
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {analysisData?.alternatives && analysisData.alternatives.length > 0 ? (
-                <ul className="space-y-4">
-                  {analysisData.alternatives.map((alt: Alternative, index: number) => (
-                    <li key={index} className="border-b border-border pb-3 last:border-b-0 last:pb-0">
-                      <div className="flex items-start justify-between">
-                        <div className="flex-1">
+      {/* Alternatives Section */}
+      <section className="mb-8">
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center text-2xl">
+              <Users className="mr-3 h-6 w-6 text-purple-500" />
+              Suggested Alternatives
+            </CardTitle>
+            <CardDescription>
+              Discover similar projects and alternatives that might fit your needs.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {analysisData?.alternatives && analysisData.alternatives.length > 0 ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {analysisData.alternatives.map((alt: Alternative, index: number) => (
+                  <Card key={index} className="hover:shadow-md transition-shadow border-muted">
+                    <CardContent className="p-4">
+                      <div className="space-y-3">
+                        <div className="flex items-start justify-between">
                           <Link href={alt.url} target="_blank" rel="noopener noreferrer" 
-                                className="font-medium text-primary hover:underline flex items-center">
-                            {alt.name} <ExternalLink className="ml-1 h-3 w-3" />
+                                className="font-semibold text-primary hover:underline flex items-center group">
+                            {alt.name} 
+                            <ExternalLink className="ml-1 h-4 w-4 opacity-0 group-hover:opacity-100 transition-opacity" />
                           </Link>
-                          {alt.description && (
-                            <p className="text-xs text-muted-foreground mt-1">{alt.description}</p>
-                          )}
-                          {alt.reasoning && (
-                            <p className="text-xs text-muted-foreground mt-1 italic">
-                              Why: {alt.reasoning}
+                          <div className="flex flex-col items-end gap-1">
+                            {alt.category && (
+                              <Badge variant="secondary" className="text-xs">{alt.category}</Badge>
+                            )}
+                            {alt.stars && (
+                              <div className="flex items-center text-xs text-muted-foreground">
+                                <Star className="h-3 w-3 text-yellow-400 mr-1" />
+                                {alt.stars.toLocaleString()}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                        
+                        {alt.description && (
+                          <p className="text-sm text-muted-foreground leading-relaxed">{alt.description}</p>
+                        )}
+                        
+                        {alt.reasoning && (
+                          <div className="bg-muted/50 rounded-md p-3">
+                            <p className="text-xs text-muted-foreground italic leading-relaxed">
+                              <strong>Why this alternative:</strong> {alt.reasoning}
                             </p>
-                          )}
-                        </div>
-                        <div className="flex flex-col items-end ml-2">
-                          {alt.category && (
-                            <Badge variant="secondary" className="text-xs mb-1">{alt.category}</Badge>
-                          )}
-                          {alt.stars && (
-                            <div className="flex items-center text-xs text-muted-foreground">
-                              <Star className="h-3 w-3 text-yellow-400 mr-1" />
-                              {alt.stars.toLocaleString()}
-                            </div>
-                          )}
-                        </div>
+                          </div>
+                        )}
+                        
+                        {alt.githubUrl && alt.githubUrl !== alt.url && (
+                          <Link href={alt.githubUrl} target="_blank" rel="noopener noreferrer" 
+                                className="text-xs text-muted-foreground hover:text-primary hover:underline flex items-center">
+                            <Github className="h-3 w-3 mr-1" />
+                            View on GitHub
+                          </Link>
+                        )}
                       </div>
-                      {alt.githubUrl && alt.githubUrl !== alt.url && (
-                        <Link href={alt.githubUrl} target="_blank" rel="noopener noreferrer" 
-                              className="text-xs text-muted-foreground hover:underline flex items-center mt-1">
-                          <Github className="h-3 w-3 mr-1" />
-                          GitHub
-                        </Link>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="text-sm text-muted-foreground">
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-8">
+                <Users className="h-12 w-12 text-muted-foreground/50 mx-auto mb-4" />
+                <p className="text-muted-foreground">
                   {isFetching ? 'Searching for alternatives...' : 'No alternatives found or have not been analyzed yet.'}
                 </p>
-              )}
-            </CardContent>
-          </Card>
-        </aside>
-      </div>
-       <footer className="mt-12 text-center text-sm text-muted-foreground">
-        <p>Análisis generado el: {analysisData?.createdAt ? new Date(analysisData.createdAt).toLocaleDateString() : 'N/A'}</p>
-        <p>Datos del repositorio actualizados el: {new Date(repoData.updatedAt).toLocaleDateString()}</p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </section>      {/* Footer */}
+      <footer className="mt-12 pt-8 border-t border-border">
+        <div className="flex flex-col sm:flex-row justify-between items-center text-sm text-muted-foreground">
+          <div className="mb-2 sm:mb-0">
+            <p>Análisis generado el: <span className="font-medium">{analysisData?.createdAt ? new Date(analysisData.createdAt).toLocaleDateString() : 'N/A'}</span></p>
+          </div>
+          <div>
+            <p>Datos del repositorio actualizados el: <span className="font-medium">{new Date(repoData.updatedAt).toLocaleDateString()}</span></p>
+          </div>
+        </div>
       </footer>
     </div>
   );
