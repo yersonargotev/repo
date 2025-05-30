@@ -44,8 +44,7 @@ async function fetchAndAnalyze(owner: string, repoName: string, forceRefresh: bo
     // Handle repository creation/update with proper upsert pattern
     if (!repoRecord) {
       // Use INSERT ... ON CONFLICT for better race condition handling
-      try {
-        const upsertResult = await db.insert(repositoriesTable).values({
+      try {        const upsertResult = await db.insert(repositoriesTable).values({
           owner: githubData.owner.login,
           name: githubData.name,
           fullName: fullName,
@@ -55,6 +54,16 @@ async function fetchAndAnalyze(owner: string, repoName: string, forceRefresh: bo
           primaryLanguage: githubData.language,
           stars: githubData.stargazers_count,
           forks: githubData.forks_count,
+          openIssues: githubData.open_issues_count,
+          size: githubData.size,
+          topics: githubData.topics,
+          license: githubData.license?.name || null,
+          isArchived: githubData.archived,
+          isDisabled: githubData.disabled,
+          defaultBranch: githubData.default_branch,
+          githubCreatedAt: new Date(githubData.created_at),
+          githubUpdatedAt: new Date(githubData.updated_at),
+          githubPushedAt: new Date(githubData.pushed_at),
         }).onConflictDoUpdate({
           target: repositoriesTable.fullName,
           set: {
@@ -62,6 +71,16 @@ async function fetchAndAnalyze(owner: string, repoName: string, forceRefresh: bo
             stars: githubData.stargazers_count,
             forks: githubData.forks_count,
             primaryLanguage: githubData.language,
+            openIssues: githubData.open_issues_count,
+            size: githubData.size,
+            topics: githubData.topics,
+            license: githubData.license?.name || null,
+            isArchived: githubData.archived,
+            isDisabled: githubData.disabled,
+            defaultBranch: githubData.default_branch,
+            githubCreatedAt: new Date(githubData.created_at),
+            githubUpdatedAt: new Date(githubData.updated_at),
+            githubPushedAt: new Date(githubData.pushed_at),
             updatedAt: new Date(),
           }
         }).returning({ id: repositoriesTable.id });
@@ -82,13 +101,22 @@ async function fetchAndAnalyze(owner: string, repoName: string, forceRefresh: bo
       }
     } else {
       // Update existing repository data
-      try {
-        await db.update(repositoriesTable)
+      try {        await db.update(repositoriesTable)
           .set({
             description: githubData.description,
             stars: githubData.stargazers_count,
             forks: githubData.forks_count,
             primaryLanguage: githubData.language,
+            openIssues: githubData.open_issues_count,
+            size: githubData.size,
+            topics: githubData.topics,
+            license: githubData.license?.name || null,
+            isArchived: githubData.archived,
+            isDisabled: githubData.disabled,
+            defaultBranch: githubData.default_branch,
+            githubCreatedAt: new Date(githubData.created_at),
+            githubUpdatedAt: new Date(githubData.updated_at),
+            githubPushedAt: new Date(githubData.pushed_at),
             updatedAt: new Date(),
           })
           .where(eq(repositoriesTable.id, repoRecord.id));
