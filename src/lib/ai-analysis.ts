@@ -93,7 +93,7 @@ export class AIAnalysisService {
         errorMessage: error.message,
         repository: `${repoData.owner.login}/${repoData.name}`,
         cause: error.cause?.message || 'No cause available',
-        text: error.text ? error.text.substring(0, 500) + '...' : 'No text available'
+        text: error.text ? `${error.text.substring(0, 500)}...` : 'No text available'
       });
 
       // If schema validation fails, try with a more explicit prompt

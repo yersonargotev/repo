@@ -1,6 +1,6 @@
 "use client";
 
-import { Repository } from '@/db/schema';
+import type { Repository } from '@/db/schema';
 import { useInfiniteQuery, useQueryClient } from '@tanstack/react-query';
 
 interface RepositoriesResponse {

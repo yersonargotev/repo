@@ -41,7 +41,7 @@ export class GitHubService {
     };
 
     if (this.apiKey) {
-      headers['Authorization'] = `token ${this.apiKey}`;
+      headers.Authorization = `token ${this.apiKey}`;
     }
 
     return headers;
@@ -75,7 +75,7 @@ export class GitHubService {
     }
   }
 
-  async searchRepositories(query: string, limit: number = 5): Promise<GitHubRepo[]> {
+  async searchRepositories(query: string, limit = 5): Promise<GitHubRepo[]> {
     const url = `${this.baseUrl}/search/repositories?q=${encodeURIComponent(query)}&sort=stars&order=desc&per_page=${limit}`;
     
     try {

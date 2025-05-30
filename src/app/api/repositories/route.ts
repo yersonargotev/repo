@@ -1,14 +1,14 @@
 import { repositories } from '@/db/schema';
 import { db } from '@/lib/db';
 import { desc, eq, like, or } from 'drizzle-orm';
-import { NextRequest, NextResponse } from 'next/server';
+import { type NextRequest, NextResponse } from 'next/server';
 
 const PAGE_SIZE = 12; // Número de repositorios por página
 
 export async function GET(request: NextRequest) {
   try {
     const searchParams = request.nextUrl.searchParams;
-    const page = parseInt(searchParams.get('page') || '0');
+    const page = Number.parseInt(searchParams.get('page') || '0');
     const search = searchParams.get('search') || '';
     const language = searchParams.get('language') || '';
     const sortBy = searchParams.get('sortBy') || 'stars';

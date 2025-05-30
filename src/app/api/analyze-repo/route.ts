@@ -3,12 +3,12 @@ import { AIAnalysisService } from '@/lib/ai-analysis';
 import { db } from '@/lib/db';
 import { GitHubService } from '@/lib/github';
 import { eq } from 'drizzle-orm';
-import { NextRequest, NextResponse } from 'next/server';
+import { type NextRequest, NextResponse } from 'next/server';
 
 const githubService = new GitHubService();
 const aiService = new AIAnalysisService();
 
-async function fetchAndAnalyze(owner: string, repoName: string, forceRefresh: boolean = false) {
+async function fetchAndAnalyze(owner: string, repoName: string, forceRefresh = false) {
   const fullName = `${owner}/${repoName}`;
 
   try {

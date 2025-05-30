@@ -1,7 +1,7 @@
 import { aiAnalyses as aiAnalysesTable, repositories as repositoriesTable } from '@/db/schema';
 import { db } from '@/lib/db';
 import { eq } from 'drizzle-orm';
-import { NextRequest, NextResponse } from 'next/server';
+import { type NextRequest, NextResponse } from 'next/server';
 
 export async function GET(request: NextRequest) {
   try {
