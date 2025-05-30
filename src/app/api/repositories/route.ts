@@ -48,24 +48,35 @@ export async function GET(request: NextRequest) {
         break;
     }
 
-    // Construir query base
-    let query = db.select().from(repositories);
-    
-    // Aplicar filtros si existen
-    if (conditions.length > 0) {
-      query = query.where(conditions.length === 1 ? conditions[0] : or(...conditions));
-    }
-    
-    // Aplicar ordenamiento y paginación
-    const repos = await query
+    // Construir query base con filtros
+    const query = db
+      .select()
+      .from(repositories)
+      .where(
+        conditions.length === 0
+          ? undefined
+          : conditions.length === 1
+          ? conditions[0]
+          : or(...conditions)
+      )
       .orderBy(...orderByClause)
       .limit(PAGE_SIZE)
       .offset(page * PAGE_SIZE);
 
+    // Ejecutar la consulta
+    const repos = await query;
+
     // Obtener el total de repositorios para saber si hay más páginas
-    let totalQuery = db.select({ count: repositories.id }).from(repositories);
+    let totalQuery;
     if (conditions.length > 0) {
-      totalQuery = totalQuery.where(conditions.length === 1 ? conditions[0] : or(...conditions));
+      totalQuery = db
+        .select({ count: repositories.id })
+        .from(repositories)
+        .where(conditions.length === 1 ? conditions[0] : or(...conditions));
+    } else {
+      totalQuery = db
+        .select({ count: repositories.id })
+        .from(repositories);
     }
     
     const totalResult = await totalQuery;
