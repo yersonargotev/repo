@@ -14,9 +14,17 @@ interface RepoPageParams {
 // --- Función para obtener datos del repositorio y análisis ---
 async function getRepoAndAnalysis(owner: string, repoName: string) {
   try {
-    // For internal API routes in Next.js, use absolute URLs in production
-    // This ensures the request works correctly on Vercel
-    const response = await fetch(`/api/analyze-repo`, {
+    // Construct absolute URL for server-side fetch
+    // In production, relative URLs don't work in server components
+    const baseUrl = process.env.VERCEL_URL
+      ? `https://${process.env.VERCEL_URL}`
+      : process.env.NODE_ENV === 'development'
+        ? 'http://localhost:3000'
+        : `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL || 'localhost:3000'}`;
+
+    const apiUrl = `${baseUrl}/api/analyze-repo`;
+
+    const response = await fetch(apiUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
