@@ -44,17 +44,58 @@ async function fetchAndAnalyze(
       }
     }
 
-    // Fetch fresh data from GitHub
-    console.log(`Fetching GitHub data for ${fullName}`);
-    const githubData = await githubService.fetchRepository(owner, repoName);
-
-    // Get repository topics if available
-    const topics = await githubService.getRepositoryTopics(owner, repoName);
-    githubData.topics = topics;
-
-    // Handle repository creation/update with proper upsert pattern
+    // If we don't have the repository, get it first using the repo-info endpoint
     if (!repoRecord) {
-      // Use INSERT ... ON CONFLICT for better race condition handling
+      try {
+        console.log(
+          `Repository not in database, using repo-info endpoint for ${fullName}`,
+        );
+
+        // Use internal API call to repo-info endpoint
+        const baseUrl = process.env.VERCEL_URL
+          ? process.env.VERCEL_URL.startsWith('http')
+            ? process.env.VERCEL_URL
+            : `https://${process.env.VERCEL_URL}`
+          : 'http://localhost:3000';
+
+        const repoInfoResponse = await fetch(`${baseUrl}/api/repo-info`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ owner, repo: repoName }),
+        });
+
+        if (repoInfoResponse.ok) {
+          const repoInfoData = await repoInfoResponse.json();
+          if (repoInfoData.success && repoInfoData.repository) {
+            console.log(
+              `Successfully retrieved repository from repo-info: ${fullName}`,
+            );
+            // The repo-info endpoint already saved it to the database, so fetch it
+            repoRecord = await db.query.repositories.findFirst({
+              where: eq(repositoriesTable.fullName, fullName),
+            });
+          }
+        }
+      } catch (repoInfoError) {
+        console.warn(
+          `Failed to get repository from repo-info endpoint: ${fullName}`,
+          repoInfoError,
+        );
+      }
+    }
+
+    // If we still don't have the repository, try direct GitHub fetch as fallback
+    if (!repoRecord) {
+      console.log(`Fallback: Fetching GitHub data directly for ${fullName}`);
+      const githubData = await githubService.fetchRepository(owner, repoName);
+
+      // Get repository topics if available
+      const topics = await githubService.getRepositoryTopics(owner, repoName);
+      githubData.topics = topics;
+
+      // Save repository to database
       try {
         const upsertResult = await db
           .insert(repositoriesTable)
@@ -117,9 +158,16 @@ async function fetchAndAnalyze(
           );
         }
       }
-    } else {
-      // Update existing repository data
+    } else if (forceRefresh) {
+      // If we have the repository but are forcing refresh, update repository data
       try {
+        console.log(
+          `Force refreshing repository data from GitHub for ${fullName}`,
+        );
+        const githubData = await githubService.fetchRepository(owner, repoName);
+        const topics = await githubService.getRepositoryTopics(owner, repoName);
+        githubData.topics = topics;
+
         await db
           .update(repositoriesTable)
           .set({
@@ -169,7 +217,19 @@ async function fetchAndAnalyze(
       );
 
       try {
-        const aiAnalysis = await aiService.analyzeRepository(githubData);
+        // Convert repository record to GitHubRepo format for AI analysis
+        const githubRepoData = {
+          name: repoRecord.name,
+          owner: { login: repoRecord.owner },
+          description: repoRecord.description,
+          language: repoRecord.primaryLanguage,
+          stargazers_count: repoRecord.stars || 0,
+          forks_count: repoRecord.forks || 0,
+          topics: repoRecord.topics || [],
+          html_url: repoRecord.githubUrl,
+        };
+
+        const aiAnalysis = await aiService.analyzeRepository(githubRepoData);
 
         if (analysisRecord) {
           // Update existing analysis
@@ -246,13 +306,13 @@ async function fetchAndAnalyze(
           alternatives: [
             {
               name: 'Search GitHub',
-              url: `https://github.com/search?q=${encodeURIComponent(`${githubData.language || ''} ${githubData.description || githubData.name}`)}`,
+              url: `https://github.com/search?q=${encodeURIComponent(`${repoRecord.primaryLanguage || ''} ${repoRecord.description || repoRecord.name}`)}`,
               description: 'Search for similar projects on GitHub',
               reasoning: 'Manual search for alternatives',
             },
           ],
-          category: githubData.language || 'Software',
-          analysisContent: `Analysis for ${githubData.name}: ${githubData.description || 'No description available.'}`,
+          category: repoRecord.primaryLanguage || 'Software',
+          analysisContent: `Analysis for ${repoRecord.name}: ${repoRecord.description || 'No description available.'}`,
         };
 
         if (analysisRecord) {
