@@ -16,11 +16,14 @@ async function getRepoAndAnalysis(owner: string, repoName: string) {
   try {
     // Construct absolute URL for server-side fetch
     // In production, relative URLs don't work in server components
-    const baseUrl = process.env.VERCEL_URL
-      ? `https://${process.env.VERCEL_URL}`
-      : process.env.NODE_ENV === 'development'
+    const baseUrl =
+      process.env.NODE_ENV === 'development'
         ? 'http://localhost:3000'
-        : `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL || 'localhost:3000'}`;
+        : process.env.VERCEL_URL
+          ? process.env.VERCEL_URL.startsWith('http')
+            ? process.env.VERCEL_URL
+            : `https://${process.env.VERCEL_URL}`
+          : `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL || 'localhost:3000'}`;
 
     const apiUrl = `${baseUrl}/api/analyze-repo`;
 
@@ -63,14 +66,22 @@ async function getRepoAndAnalysis(owner: string, repoName: string) {
 
     // Handle specific error cases
     if (fetchError instanceof Error) {
-      // For unauthorized errors, this could be a URL formation issue
+      // For GitHub authentication errors
       if (
+        fetchError.message.includes('GitHub API authentication failed') ||
         fetchError.message.includes('Unauthorized') ||
         fetchError.message.includes('401')
       ) {
-        console.error(
-          'Authorization error detected. This may be due to incorrect URL formation in production.',
-        );
+        console.error('GitHub authentication error detected:', {
+          message: fetchError.message,
+          hasGithubToken: !!process.env.GITHUB_TOKEN,
+        });
+        return {
+          success: false,
+          error: 'GITHUB_AUTH_ERROR',
+          repository: null,
+          analysis: null,
+        };
       }
 
       if (

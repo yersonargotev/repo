@@ -346,10 +346,23 @@ export async function GET(request: NextRequest) {
       success: true,
     });
   } catch (error) {
-    console.error('Error in API analyze-repo:', error);
-
-    // Handle specific GitHub API errors
+    console.error('Error in API analyze-repo:', error); // Handle specific GitHub API errors
     if (error instanceof Error) {
+      if (
+        error.message.includes('authentication failed') ||
+        error.message.includes('Unauthorized')
+      ) {
+        return NextResponse.json(
+          {
+            message:
+              'GitHub API authentication failed. Please check your GITHUB_TOKEN environment variable.',
+            error: 'GITHUB_AUTH_ERROR',
+            details: error.message,
+          },
+          { status: 401 },
+        );
+      }
+
       if (error.message.includes('not found')) {
         return NextResponse.json(
           {
@@ -452,10 +465,24 @@ export async function POST(request: NextRequest) {
         },
         { status: 202 },
       ); // 202 Accepted - request is being processed
-    }
-
-    // Check for GitHub API errors
+    } // Check for GitHub API errors
     if (error instanceof Error) {
+      if (
+        error.message.includes('authentication failed') ||
+        error.message.includes('Unauthorized')
+      ) {
+        return NextResponse.json(
+          {
+            error:
+              'GitHub API authentication failed. Please check your GITHUB_TOKEN environment variable.',
+            success: false,
+            errorType: 'GITHUB_AUTH_ERROR',
+            details: error.message,
+          },
+          { status: 401 },
+        );
+      }
+
       if (error.message.includes('rate limit exceeded')) {
         return NextResponse.json(
           {
