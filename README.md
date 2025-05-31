@@ -35,8 +35,8 @@ A powerful Next.js application that uses AI to analyze GitHub repositories, prov
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/yourusername/github-repo-analyzer.git
-   cd github-repo-analyzer
+   git clone https://github.com/yourusername/repo.git
+   cd repo
    ```
 
 2. Install dependencies:
@@ -106,4 +106,4 @@ The analyzer supports a wide range of repositories:
 
 ---
 
-Built with ❤️ using Next.js and AI technologies.
+Built with ❤️
