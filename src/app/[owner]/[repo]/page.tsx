@@ -3,7 +3,7 @@ import {
   QueryClient,
   dehydrate,
 } from '@tanstack/react-query';
-import RepoDetailsClient from "./repo-details-client";
+import RepoDetailsClient from './repo-details-client';
 
 // --- Tipos para los datos ---
 interface RepoPageParams {
@@ -13,14 +13,10 @@ interface RepoPageParams {
 
 // --- Función para obtener datos del repositorio y análisis ---
 async function getRepoAndAnalysis(owner: string, repoName: string) {
-  const baseUrl = process.env.NODE_ENV === 'development' 
-    ? 'http://localhost:3000' 
-    : process.env.VERCEL_URL 
-      ? `https://${process.env.VERCEL_URL}` 
-      : 'http://localhost:3000';
-  
   try {
-    const response = await fetch(`${baseUrl}/api/analyze-repo`, {
+    // For internal API routes in Next.js, use absolute URLs in production
+    // This ensures the request works correctly on Vercel
+    const response = await fetch(`/api/analyze-repo`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -33,18 +29,18 @@ async function getRepoAndAnalysis(owner: string, repoName: string) {
       // If it's a 202 or 500 error, it might be a race condition or analysis in progress
       if (response.status === 202 || response.status === 500) {
         console.log(`Analysis may be in progress for ${owner}/${repoName}`);
-        return { 
-          success: false, 
+        return {
+          success: false,
           error: 'ANALYSIS_IN_PROGRESS',
           repository: null,
-          analysis: null
+          analysis: null,
         };
       }
       throw new Error(`Failed to analyze repository: ${response.statusText}`);
     }
 
     const data = await response.json();
-    
+
     if (!data.success) {
       // Don't throw an error for ANALYSIS_IN_PROGRESS, return the response as is
       if (data.error === 'ANALYSIS_IN_PROGRESS') {
@@ -56,27 +52,43 @@ async function getRepoAndAnalysis(owner: string, repoName: string) {
     return data;
   } catch (fetchError) {
     console.error('Error fetching repository analysis:', fetchError);
-    
+
     // Handle specific error cases
     if (fetchError instanceof Error) {
-      if (fetchError.message.includes('Failed to analyze repository: Internal Server Error')) {
-        return { 
-          success: false, 
+      // For unauthorized errors, this could be a URL formation issue
+      if (
+        fetchError.message.includes('Unauthorized') ||
+        fetchError.message.includes('401')
+      ) {
+        console.error(
+          'Authorization error detected. This may be due to incorrect URL formation in production.',
+        );
+      }
+
+      if (
+        fetchError.message.includes(
+          'Failed to analyze repository: Internal Server Error',
+        )
+      ) {
+        return {
+          success: false,
           error: 'ANALYSIS_IN_PROGRESS',
           repository: null,
-          analysis: null
+          analysis: null,
         };
       }
     }
-    
+
     return null;
   }
 }
 
 // --- Metadata Dinámica ---
-export async function generateMetadata({ params }: { params: Promise<RepoPageParams> }) {
+export async function generateMetadata({
+  params,
+}: { params: Promise<RepoPageParams> }) {
   const { owner, repo } = await params;
-  
+
   try {
     const data = await getRepoAndAnalysis(owner, repo);
 
@@ -92,13 +104,19 @@ export async function generateMetadata({ params }: { params: Promise<RepoPagePar
 
     return {
       title: `${repository.name} por ${repository.owner} - GitHub Analyzer`,
-      description: repository.description || `Análisis y alternativas para el repositorio de GitHub ${repository.fullName}.`,
+      description:
+        repository.description ||
+        `Análisis y alternativas para el repositorio de GitHub ${repository.fullName}.`,
       openGraph: {
         title: `${repository.name} por ${repository.owner}`,
-        description: repository.description || `Análisis y alternativas para el repositorio de GitHub ${repository.fullName}.`,
+        description:
+          repository.description ||
+          `Análisis y alternativas para el repositorio de GitHub ${repository.fullName}.`,
         images: [
           {
-            url: repository.avatarUrl || `https://via.placeholder.com/1200x630.png?text=${repository.name}`,
+            url:
+              repository.avatarUrl ||
+              `https://via.placeholder.com/1200x630.png?text=${repository.name}`,
             width: 1200,
             height: 630,
             alt: `Avatar de ${repository.owner}`,
@@ -110,8 +128,13 @@ export async function generateMetadata({ params }: { params: Promise<RepoPagePar
       twitter: {
         card: 'summary_large_image',
         title: `${repository.name} por ${repository.owner}`,
-        description: repository.description || `Análisis y alternativas para el repositorio de GitHub ${repository.fullName}.`,
-        images: [repository.avatarUrl || `https://via.placeholder.com/1200x630.png?text=${repository.name}`],
+        description:
+          repository.description ||
+          `Análisis y alternativas para el repositorio de GitHub ${repository.fullName}.`,
+        images: [
+          repository.avatarUrl ||
+            `https://via.placeholder.com/1200x630.png?text=${repository.name}`,
+        ],
       },
     };
   } catch (error) {
@@ -124,11 +147,12 @@ export async function generateMetadata({ params }: { params: Promise<RepoPagePar
   }
 }
 
-
 // --- Componente de Página ---
-export default async function RepoPage({ params }: { params: Promise<RepoPageParams> }) {
+export default async function RepoPage({
+  params,
+}: { params: Promise<RepoPageParams> }) {
   const { owner, repo } = await params;
-  
+
   // Crear un QueryClient dedicado para esta página
   const queryClient = new QueryClient({
     defaultOptions: {
@@ -153,10 +177,10 @@ export default async function RepoPage({ params }: { params: Promise<RepoPagePar
     console.log('Prefetch failed, client will handle the request:', {
       owner,
       repo,
-      error: error instanceof Error ? error.message : 'Unknown error'
+      error: error instanceof Error ? error.message : 'Unknown error',
     });
   }
-  
+
   const dehydratedState = dehydrate(queryClient);
 
   return (
