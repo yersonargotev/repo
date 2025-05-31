@@ -11,11 +11,10 @@ interface RepoPageParams {
   repo: string;
 }
 
-// --- Función para obtener datos del repositorio y análisis ---
-async function getRepoAndAnalysis(owner: string, repoName: string) {
+// --- Función simplificada para obtener datos del repositorio ---
+async function getRepositoryInfo(owner: string, repoName: string) {
   try {
-    // Construct absolute URL for server-side fetch
-    // In production, relative URLs don't work in server components
+    // Use the simplified repo-info endpoint first
     const baseUrl =
       process.env.NODE_ENV === 'development'
         ? 'http://localhost:3000'
@@ -25,94 +24,81 @@ async function getRepoAndAnalysis(owner: string, repoName: string) {
             : `https://${process.env.VERCEL_URL}`
           : `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL || 'localhost:3000'}`;
 
-    const apiUrl = `${baseUrl}/api/analyze-repo`;
+    console.log(`Server: Fetching repository info for ${owner}/${repoName}`);
 
-    const response = await fetch(apiUrl, {
+    const repoInfoUrl = `${baseUrl}/api/repo-info`;
+    const repoResponse = await fetch(repoInfoUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ owner, repo: repoName }),
-      cache: 'no-store', // Disable caching for fresh data
+      cache: 'no-store',
     });
 
-    if (!response.ok) {
-      // If it's a 202 or 500 error, it might be a race condition or analysis in progress
-      if (response.status === 202 || response.status === 500) {
-        console.log(`Analysis may be in progress for ${owner}/${repoName}`);
+    if (!repoResponse.ok) {
+      console.error(`Repository info fetch failed: ${repoResponse.status} ${repoResponse.statusText}`);
+
+      if (repoResponse.status === 404) {
         return {
           success: false,
-          error: 'ANALYSIS_IN_PROGRESS',
+          error: 'REPOSITORY_NOT_FOUND',
           repository: null,
           analysis: null,
         };
       }
-      throw new Error(`Failed to analyze repository: ${response.statusText}`);
+
+      return {
+        success: false,
+        error: 'REPOSITORY_FETCH_ERROR',
+        repository: null,
+        analysis: null,
+      };
     }
 
-    const data = await response.json();
+    const repoData = await repoResponse.json();
 
-    if (!data.success) {
-      // Don't throw an error for ANALYSIS_IN_PROGRESS, return the response as is
-      if (data.error === 'ANALYSIS_IN_PROGRESS') {
-        return data;
-      }
-      throw new Error(data.error || 'Failed to analyze repository');
+    if (!repoData.success) {
+      console.error('Repository info fetch failed:', repoData.error);
+      return {
+        success: false,
+        error: 'REPOSITORY_FETCH_ERROR',
+        repository: null,
+        analysis: null,
+      };
     }
 
-    return data;
+    console.log(`Server: Successfully fetched repository info for ${owner}/${repoName}`);
+
+    // Return the repository data - analysis will be handled client-side
+    return {
+      success: true,
+      repository: repoData.repository,
+      analysis: null, // Analysis will be loaded client-side
+      error: null,
+    };
   } catch (fetchError) {
-    console.error('Error fetching repository analysis:', fetchError);
+    console.error(`Server: Error fetching repository info for ${owner}/${repoName}:`, fetchError);
 
-    // Handle specific error cases
-    if (fetchError instanceof Error) {
-      // For GitHub authentication errors
-      if (
-        fetchError.message.includes('GitHub API authentication failed') ||
-        fetchError.message.includes('Unauthorized') ||
-        fetchError.message.includes('401')
-      ) {
-        console.error('GitHub authentication error detected:', {
-          message: fetchError.message,
-          hasGithubToken: !!process.env.GITHUB_TOKEN,
-        });
-        return {
-          success: false,
-          error: 'GITHUB_AUTH_ERROR',
-          repository: null,
-          analysis: null,
-        };
-      }
-
-      if (
-        fetchError.message.includes(
-          'Failed to analyze repository: Internal Server Error',
-        )
-      ) {
-        return {
-          success: false,
-          error: 'ANALYSIS_IN_PROGRESS',
-          repository: null,
-          analysis: null,
-        };
-      }
-    }
-
-    return null;
+    return {
+      success: false,
+      error: 'REPOSITORY_FETCH_ERROR',
+      repository: null,
+      analysis: null,
+    };
   }
 }
 
-// --- Metadata Dinámica ---
+// --- Metadata Dinámica Simplificada ---
 export async function generateMetadata({
   params,
 }: { params: Promise<RepoPageParams> }) {
   const { owner, repo } = await params;
 
   try {
-    const data = await getRepoAndAnalysis(owner, repo);
+    const data = await getRepositoryInfo(owner, repo);
 
-    // If analysis is in progress or failed, show generic metadata
-    if (!data || !data.repository || data.error === 'ANALYSIS_IN_PROGRESS') {
+    if (!data || !data.repository) {
       return {
         title: `${repo} por ${owner} - GitHub Analyzer`,
         description: `Analyzing GitHub repository ${owner}/${repo}. Please wait while we generate insights and alternatives.`,
@@ -152,12 +138,11 @@ export async function generateMetadata({
           `Análisis y alternativas para el repositorio de GitHub ${repository.fullName}.`,
         images: [
           repository.avatarUrl ||
-            `https://via.placeholder.com/1200x630.png?text=${repository.name}`,
+          `https://via.placeholder.com/1200x630.png?text=${repository.name}`,
         ],
       },
     };
   } catch (error) {
-    // If metadata generation fails, return generic metadata
     console.error('Error generating metadata:', error);
     return {
       title: `${repo} por ${owner} - GitHub Analyzer`,
@@ -166,7 +151,7 @@ export async function generateMetadata({
   }
 }
 
-// --- Componente de Página ---
+// --- Componente de Página Simplificado ---
 export default async function RepoPage({
   params,
 }: { params: Promise<RepoPageParams> }) {
@@ -182,18 +167,19 @@ export default async function RepoPage({
     },
   });
 
-  // Intentar prefetch de datos - no fallar la página si esto falla
+  // Intentar prefetch de datos básicos del repositorio
   try {
     await queryClient.prefetchQuery({
-      queryKey: ['repo', owner, repo],
-      queryFn: () => getRepoAndAnalysis(owner, repo),
-      // No permitir que queries fallidas se mantengan en cache por mucho tiempo
-      staleTime: 0,
-      gcTime: 1000 * 60, // 1 minuto para errores
+      queryKey: ['repository-info', owner, repo],
+      queryFn: () => getRepositoryInfo(owner, repo),
+      staleTime: 1000 * 60 * 5, // 5 minutos
+      gcTime: 1000 * 60 * 60, // 1 hora
     });
+
+    console.log(`Server: Successfully prefetched repository info for ${owner}/${repo}`);
   } catch (error) {
     // Log del error pero no fallar la página
-    console.log('Prefetch failed, client will handle the request:', {
+    console.log('Server: Prefetch failed, client will handle the request:', {
       owner,
       repo,
       error: error instanceof Error ? error.message : 'Unknown error',

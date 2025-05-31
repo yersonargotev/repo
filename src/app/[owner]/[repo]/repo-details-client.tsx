@@ -79,21 +79,80 @@ interface AnalysisData {
   updatedAt?: Date;
 }
 
-interface ApiResponse {
+interface RepositoryResponse {
+  repository: RepoData | null;
+  success: boolean;
+  error?: string;
+}
+
+interface AnalysisResponse {
   repository: RepoData | null;
   analysis: AnalysisData | null;
   success: boolean;
   error?: string;
 }
 
-// --- Función de Fetch para el cliente ---
-async function fetchRepoAndAnalysisFromServer(
+// --- Función para obtener solo información del repositorio ---
+async function fetchRepositoryInfo(
+  owner: string,
+  repoName: string,
+): Promise<RepositoryResponse> {
+  console.log(`Client: Fetching repository info for ${owner}/${repoName}`, {
+    timestamp: new Date().toISOString(),
+  });
+
+  try {
+    const response = await fetch('/api/repo-info', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ owner, repo: repoName }),
+      credentials: 'same-origin',
+    });
+
+    if (!response.ok) {
+      if (response.status === 404) {
+        return {
+          repository: null,
+          success: false,
+          error: 'REPOSITORY_NOT_FOUND',
+        };
+      }
+
+      try {
+        const errorData = await response.json();
+        throw new Error(
+          errorData.error || `Error (${response.status}): ${response.statusText}`,
+        );
+      } catch (parseError) {
+        throw new Error(
+          `Error fetching repository: ${response.status} ${response.statusText}`,
+        );
+      }
+    }
+
+    const data = await response.json();
+    console.log(`Client: Successfully fetched repository info for ${owner}/${repoName}`, {
+      hasRepository: !!data.repository,
+      timestamp: new Date().toISOString(),
+    });
+
+    return data;
+  } catch (error) {
+    console.error(`Client: Error fetching repository info for ${owner}/${repoName}:`, error);
+    throw error;
+  }
+}
+
+// --- Función para obtener análisis (separado del repositorio) ---
+async function fetchRepositoryAnalysis(
   owner: string,
   repoName: string,
   forceRefresh = false,
-): Promise<ApiResponse> {
+): Promise<AnalysisResponse> {
   console.log(
-    `Fetching repository data for ${owner}/${repoName}${forceRefresh ? ' (force refresh)' : ''}`,
+    `Client: Fetching analysis for ${owner}/${repoName}${forceRefresh ? ' (force refresh)' : ''}`,
     {
       timestamp: new Date().toISOString(),
     },
@@ -106,13 +165,11 @@ async function fetchRepoAndAnalysisFromServer(
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ owner, repo: repoName, forceRefresh }),
-      credentials: 'same-origin', // Ensure cookies are sent with request
+      credentials: 'same-origin',
     });
 
     if (!response.ok) {
       if (response.status === 202) {
-        // Analysis in progress
-        await response.json(); // Consume the response but don't store it
         return {
           repository: null,
           analysis: null,
@@ -121,22 +178,20 @@ async function fetchRepoAndAnalysisFromServer(
         };
       }
 
-      // For other errors, try to parse the response but fall back to a generic message
       try {
         const errorData = await response.json();
         throw new Error(
-          errorData.error ||
-            `Error (${response.status}): ${response.statusText}`,
+          errorData.error || `Error (${response.status}): ${response.statusText}`,
         );
       } catch (parseError) {
         throw new Error(
-          `Error al obtener datos del repositorio: ${response.status} ${response.statusText}`,
+          `Error fetching analysis: ${response.status} ${response.statusText}`,
         );
       }
     }
 
     const data = await response.json();
-    console.log(`Successfully fetched data for ${owner}/${repoName}`, {
+    console.log(`Client: Successfully fetched analysis for ${owner}/${repoName}`, {
       hasRepository: !!data.repository,
       hasAnalysis: !!data.analysis,
       timestamp: new Date().toISOString(),
@@ -144,15 +199,12 @@ async function fetchRepoAndAnalysisFromServer(
 
     return data;
   } catch (error) {
-    console.error(
-      `Error fetching repository data for ${owner}/${repoName}:`,
-      error,
-    );
+    console.error(`Client: Error fetching analysis for ${owner}/${repoName}:`, error);
     throw error;
   }
 }
 
-// --- Componente Cliente ---
+// --- Componente Cliente Refactorizado ---
 export default function RepoDetailsClient({
   owner,
   repoName,
@@ -160,58 +212,74 @@ export default function RepoDetailsClient({
   const queryClientHook = useQueryClient();
   const invalidateRepositories = useInvalidateRepositories();
   const hasInvalidatedRef = useRef(false);
-  const { data, isLoading, error, isFetching, refetch } = useQuery<
-    ApiResponse,
-    Error
-  >({
-    queryKey: ['repo', owner, repoName],
-    queryFn: () => fetchRepoAndAnalysisFromServer(owner, repoName),
-    staleTime: 1000 * 60 * 5, // 5 minutos de stale time
-    gcTime: 1000 * 60 * 60 * 24, // 24 horas
+
+  // Query para información básica del repositorio (prioritario)
+  const {
+    data: repoData,
+    isLoading: isLoadingRepo,
+    error: repoError,
+    refetch: refetchRepo,
+  } = useQuery<RepositoryResponse, Error>({
+    queryKey: ['repository-info', owner, repoName],
+    queryFn: () => fetchRepositoryInfo(owner, repoName),
+    staleTime: 1000 * 60 * 5, // 5 minutos
+    gcTime: 1000 * 60 * 60, // 1 hora
     refetchOnWindowFocus: false,
-    refetchOnReconnect: true, // Refetch on reconnect
-    refetchOnMount: true, // Always refetch on mount
+    refetchOnReconnect: true,
     retry: (failureCount, error) => {
-      // Log errors for debugging
-      console.error(`Query error (attempt ${failureCount}):`, {
+      console.error(`Repository query error (attempt ${failureCount}):`, {
         error: error.message,
         repository: `${owner}/${repoName}`,
         timestamp: new Date().toISOString(),
       });
 
-      // No reintentar si es un error conocido de análisis en progreso
-      if (error?.message?.includes('ANALYSIS_IN_PROGRESS')) {
-        return false;
-      }
-
-      // No reintentar errores de autenticación o autorización
-      if (
-        error?.message?.includes('Unauthorized') ||
-        error?.message?.includes('401')
-      ) {
-        console.error('Authorization error detected:', {
-          error: error.message,
-          repository: `${owner}/${repoName}`,
-          timestamp: new Date().toISOString(),
-        });
-        return false;
-      }
-
-      // No reintentar errores 4xx
+      // No retry on 4xx errors
       if (error && typeof error === 'object' && 'status' in error) {
         const status = error.status as number;
         if (status >= 400 && status < 500) return false;
       }
 
-      // Retry a maximum of 3 times for other errors
+      return failureCount < 2; // Less retries for basic repo info
+    },
+  });
+
+  // Query para análisis (solo si tenemos el repositorio)
+  const {
+    data: analysisData,
+    isLoading: isLoadingAnalysis,
+    error: analysisError,
+    isFetching: isFetchingAnalysis,
+    refetch: refetchAnalysis,
+  } = useQuery<AnalysisResponse, Error>({
+    queryKey: ['repository-analysis', owner, repoName],
+    queryFn: () => fetchRepositoryAnalysis(owner, repoName),
+    enabled: !!repoData?.repository, // Solo ejecutar si tenemos datos del repositorio
+    staleTime: 1000 * 60 * 10, // 10 minutos para análisis
+    gcTime: 1000 * 60 * 60 * 24, // 24 horas
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+    retry: (failureCount, error) => {
+      // No retry for analysis in progress
+      if (error?.message?.includes('ANALYSIS_IN_PROGRESS')) {
+        return false;
+      }
+
+      // No retry on auth errors
+      if (
+        error?.message?.includes('Unauthorized') ||
+        error?.message?.includes('401')
+      ) {
+        return false;
+      }
+
       return failureCount < 3;
     },
   });
-  // Invalidate repositories cache when a new repository is successfully analyzed
+
+  // Invalidate repositories cache when successful
   useEffect(() => {
-    // Only invalidate if we have a successful analysis and haven't invalidated yet
-    if (data?.repository && data?.analysis && !hasInvalidatedRef.current) {
-      console.log('Invalidating repositories cache after successful analysis', {
+    if (repoData?.repository && !hasInvalidatedRef.current) {
+      console.log('Invalidating repositories cache after successful fetch', {
         repo: `${owner}/${repoName}`,
         timestamp: new Date().toISOString(),
       });
@@ -219,30 +287,21 @@ export default function RepoDetailsClient({
       hasInvalidatedRef.current = true;
     }
 
-    // Reset the invalidation ref when data changes to a new repository
     return () => {
       hasInvalidatedRef.current = false;
     };
-  }, [data, invalidateRepositories, owner, repoName]);
+  }, [repoData, invalidateRepositories, owner, repoName]);
 
   // Mutación para forzar re-análisis
   const { mutate: reanalyzeRepo, isPending: isReanalyzing } = useMutation({
     mutationFn: async () => {
-      // Force fresh analysis by calling the API with forceRefresh flag
-      const result = await fetchRepoAndAnalysisFromServer(
-        owner,
-        repoName,
-        true,
-      );
+      const result = await fetchRepositoryAnalysis(owner, repoName, true);
       return result;
     },
     onSuccess: (result) => {
-      // Update the query cache with new data
-      queryClientHook.setQueryData(['repo', owner, repoName], result);
-      // Invalidate repositories cache to refresh the list
+      queryClientHook.setQueryData(['repository-analysis', owner, repoName], result);
       invalidateRepositories();
 
-      // Log success for monitoring
       console.log('Re-analysis completed successfully:', {
         owner,
         repo: repoName,
@@ -260,27 +319,21 @@ export default function RepoDetailsClient({
   });
 
   // Check if analysis is in progress
-  if (
-    data?.error === 'ANALYSIS_IN_PROGRESS' ||
-    error?.message.includes(
-      'Failed to analyze repository: Internal Server Error',
-    )
-  ) {
+  if (analysisData?.error === 'ANALYSIS_IN_PROGRESS') {
     return (
       <AnalysisInProgress
         owner={owner}
         repoName={repoName}
         onAnalysisComplete={() => {
-          // Refetch data when analysis is complete
-          refetch();
-          // Invalidate repositories cache to show the new repository
+          refetchAnalysis();
           invalidateRepositories();
         }}
       />
     );
   }
 
-  if (isLoading) {
+  // Loading state for repository
+  if (isLoadingRepo) {
     return (
       <div className="container mx-auto p-4 md:p-8 flex justify-center items-center min-h-[calc(100vh-200px)]">
         <div className="flex flex-col items-center space-y-2">
@@ -305,73 +358,51 @@ export default function RepoDetailsClient({
             />
           </svg>
           <p className="text-lg text-muted-foreground">
-            Loading repository data and AI analysis...
+            Loading repository information...
           </p>
         </div>
       </div>
     );
   }
-  if (error) {
-    const errorMessage = error.message || 'An unknown error occurred';
-    const isAuthError =
-      errorMessage.includes('Unauthorized') || errorMessage.includes('401');
-    const isNotFoundError =
-      errorMessage.includes('not found') || errorMessage.includes('404');
-    const isRateLimitError = errorMessage.includes('rate limit');
 
-    // Log error for monitoring
-    console.error(`Repository details error for ${owner}/${repoName}:`, {
-      errorType: isAuthError
-        ? 'AUTH_ERROR'
-        : isNotFoundError
-          ? 'NOT_FOUND'
-          : isRateLimitError
-            ? 'RATE_LIMIT'
-            : 'UNKNOWN',
-      errorMessage,
-      timestamp: new Date().toISOString(),
-    });
-
+  // Error state for repository
+  if (repoError || repoData?.error === 'REPOSITORY_NOT_FOUND') {
     return (
       <div className="container mx-auto p-4 md:p-8">
-        <Card className="border-destructive">
+        <Card>
           <CardHeader>
-            <CardTitle className="flex items-center text-destructive">
-              <AlertTriangle className="mr-2 h-6 w-6" />
-              {isNotFoundError
-                ? 'Repository Not Found'
-                : isAuthError
-                  ? 'Authorization Error'
-                  : isRateLimitError
-                    ? 'Rate Limit Exceeded'
-                    : 'Error Loading Repository'}
+            <CardTitle className="flex items-center">
+              <AlertTriangle className="mr-2 h-6 w-6 text-orange-500" />
+              Repository not found
             </CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="mb-4">{errorMessage}</p>
-
-            {isAuthError && (
-              <p className="mt-2 text-muted-foreground">
-                This might be a temporary authorization issue. Please try
-                refreshing the page.
-              </p>
-            )}
-
-            {isRateLimitError && (
-              <p className="mt-2 text-muted-foreground">
-                GitHub API rate limit has been exceeded. Please try again later.
-              </p>
-            )}
-
-            <Button onClick={() => refetch()} className="mt-4">
-              Retry
-            </Button>
+            <p>
+              The repository{' '}
+              <span className="font-semibold">
+                {owner}/{repoName}
+              </span>{' '}
+              was not found or could not be accessed.
+            </p>
+            <p className="mt-2">
+              Make sure the URL is correct and the repository is public.
+            </p>
+            <div className="flex gap-2 mt-4">
+              <Button onClick={() => refetchRepo()} variant="outline">
+                Retry
+              </Button>
+              <Link href="/">
+                <Button variant="outline">Back to home</Button>
+              </Link>
+            </div>
           </CardContent>
         </Card>
       </div>
     );
   }
-  if (!data?.repository) {
+
+  // Repository not found
+  if (!repoData?.repository) {
     return (
       <div className="container mx-auto p-4 md:p-8">
         <Card>
@@ -403,8 +434,8 @@ export default function RepoDetailsClient({
     );
   }
 
-  const repoData = data.repository;
-  const analysisData = data.analysis;
+  const repository = repoData.repository;
+  const analysis = analysisData?.analysis;
   const {
     name,
     description,
@@ -413,7 +444,7 @@ export default function RepoDetailsClient({
     primaryLanguage,
     stars,
     forks,
-  } = repoData;
+  } = repository;
 
   return (
     <div className="container mx-auto max-w-4xl p-4 md:p-8">
@@ -424,12 +455,12 @@ export default function RepoDetailsClient({
             <AvatarImage
               src={
                 avatarUrl ||
-                `https://via.placeholder.com/80?text=${repoData.owner[0]}`
+                `https://via.placeholder.com/80?text=${repository.owner[0]}`
               }
-              alt={`Avatar de ${repoData.owner}`}
+              alt={`Avatar de ${repository.owner}`}
             />
             <AvatarFallback>
-              {repoData.owner.substring(0, 2).toUpperCase()}
+              {repository.owner.substring(0, 2).toUpperCase()}
             </AvatarFallback>
           </Avatar>
           <div>
@@ -437,12 +468,12 @@ export default function RepoDetailsClient({
             <p className="text-xl text-muted-foreground">
               por{' '}
               <Link
-                href={`https://github.com/${repoData.owner}`}
+                href={`https://github.com/${repository.owner}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="hover:underline text-primary"
               >
-                {repoData.owner}
+                {repository.owner}
               </Link>
             </p>
           </div>
@@ -470,8 +501,10 @@ export default function RepoDetailsClient({
             <span>{forks?.toLocaleString() || 0} forks</span>
           </div>
         </div>
-      </header>{' '}
+      </header>
+
       <Separator className="my-8" />
+
       {/* AI Analysis Section */}
       <section className="mb-8">
         <Card>
@@ -479,10 +512,10 @@ export default function RepoDetailsClient({
             <CardTitle className="flex items-center text-2xl">
               <Lightbulb className="mr-3 h-6 w-6 text-yellow-400" />
               AI Analysis
-              {analysisData?.category && (
+              {analysis?.category && (
                 <Badge variant="outline" className="ml-4 text-sm px-3 py-1">
                   <BookOpen className="mr-1 h-4 w-4 text-green-500" />
-                  {analysisData.category}
+                  {analysis.category}
                 </Badge>
               )}
             </CardTitle>
@@ -494,131 +527,171 @@ export default function RepoDetailsClient({
                 variant="ghost"
                 size="sm"
                 onClick={() => reanalyzeRepo()}
-                disabled={isReanalyzing || isFetching}
+                disabled={isReanalyzing || isFetchingAnalysis}
                 className="ml-2"
               >
                 <RefreshCw
-                  className={`mr-1 h-3 w-3 ${isReanalyzing || isFetching ? 'animate-spin' : ''}`}
+                  className={`mr-1 h-3 w-3 ${isReanalyzing || isFetchingAnalysis ? 'animate-spin' : ''}`}
                 />
                 {isReanalyzing
                   ? 'Re-analyzing...'
-                  : isFetching
-                    ? 'Updating...'
-                    : 'Re-analyze'}
+                  : isFetchingAnalysis
+                    ? 'Loading...'
+                    : 'Analyze'}
               </Button>
             </CardDescription>
           </CardHeader>
           <CardContent>
-            {isFetching && !isLoading && (
-              <p className="text-sm text-muted-foreground mb-4">
-                Updating analysis...
-              </p>
+            {/* Loading state for analysis */}
+            {isLoadingAnalysis && (
+              <div className="flex items-center justify-center py-8">
+                <div className="flex items-center space-x-2">
+                  <svg
+                    className="animate-spin h-5 w-5 text-primary"
+                    xmlns="http://www.w3.org/2000/svg"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                  >
+                    <circle
+                      className="opacity-25"
+                      cx="12"
+                      cy="12"
+                      r="10"
+                      stroke="currentColor"
+                      strokeWidth="4"
+                    />
+                    <path
+                      className="opacity-75"
+                      fill="currentColor"
+                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                    />
+                  </svg>
+                  <p className="text-sm text-muted-foreground">
+                    Generating AI analysis...
+                  </p>
+                </div>
+              </div>
             )}
 
-            {/* Enhanced Analysis Display */}
-            {analysisData ? (
+            {/* Analysis error state */}
+            {analysisError && !isLoadingAnalysis && (
+              <div className="text-center py-8">
+                <AlertTriangle className="h-12 w-12 text-orange-500 mx-auto mb-4" />
+                <h3 className="text-lg font-semibold mb-2">
+                  Analysis not available
+                </h3>
+                <p className="text-muted-foreground mb-4">
+                  {analysisError.message.includes('Unauthorized')
+                    ? 'There was an authentication issue. The analysis may be generated shortly.'
+                    : 'Unable to generate analysis at this time. You can still view the repository information above.'}
+                </p>
+                <Button onClick={() => refetchAnalysis()} variant="outline">
+                  Try Again
+                </Button>
+              </div>
+            )}
+
+            {/* Analysis content */}
+            {analysis && !isLoadingAnalysis && (
               <div className="space-y-6">
-                {/* Summary */}
-                {analysisData.summary && (
+                {analysis.summary && (
                   <div>
                     <h4 className="font-semibold mb-3 text-lg">Summary</h4>
                     <p className="text-muted-foreground leading-relaxed">
-                      {analysisData.summary}
+                      {analysis.summary}
                     </p>
                   </div>
                 )}
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {/* Use Case */}
-                  {analysisData.useCase && (
+                  {analysis.useCase && (
                     <div>
                       <h4 className="font-semibold mb-3">Primary Use Case</h4>
                       <p className="text-sm text-muted-foreground leading-relaxed">
-                        {analysisData.useCase}
+                        {analysis.useCase}
                       </p>
                     </div>
                   )}
 
-                  {/* Target Audience */}
-                  {analysisData.targetAudience && (
+                  {analysis.targetAudience && (
                     <div>
                       <h4 className="font-semibold mb-3">Target Audience</h4>
                       <p className="text-sm text-muted-foreground leading-relaxed">
-                        {analysisData.targetAudience}
+                        {analysis.targetAudience}
                       </p>
                     </div>
                   )}
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {/* Strengths */}
-                  {analysisData.strengths &&
-                    analysisData.strengths.length > 0 && (
-                      <div>
-                        {' '}
-                        <h4 className="font-semibold mb-3 text-green-700 dark:text-green-400">
-                          Key Strengths
-                        </h4>
-                        <ul className="list-disc list-inside text-sm text-muted-foreground space-y-2">
-                          {analysisData.strengths.map((strength, index) => (
-                            <li
-                              key={`strength-${index}-${strength.substring(0, 20)}`}
-                              className="leading-relaxed"
-                            >
-                              {strength}
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
+                  {analysis.strengths && analysis.strengths.length > 0 && (
+                    <div>
+                      <h4 className="font-semibold mb-3 text-green-700 dark:text-green-400">
+                        Key Strengths
+                      </h4>
+                      <ul className="list-disc list-inside text-sm text-muted-foreground space-y-2">
+                        {analysis.strengths.map((strength, index) => (
+                          <li
+                            key={`strength-${index}-${strength.substring(0, 20)}`}
+                            className="leading-relaxed"
+                          >
+                            {strength}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
 
-                  {/* Considerations */}
-                  {analysisData.considerations &&
-                    analysisData.considerations.length > 0 && (
-                      <div>
-                        {' '}
-                        <h4 className="font-semibold mb-3 text-orange-700 dark:text-orange-400">
-                          Considerations
-                        </h4>
-                        <ul className="list-disc list-inside text-sm text-muted-foreground space-y-2">
-                          {analysisData.considerations.map(
-                            (consideration, index) => (
-                              <li
-                                key={`consideration-${index}-${consideration.substring(0, 20)}`}
-                                className="leading-relaxed"
-                              >
-                                {consideration}
-                              </li>
-                            ),
-                          )}
-                        </ul>
-                      </div>
-                    )}
+                  {analysis.considerations && analysis.considerations.length > 0 && (
+                    <div>
+                      <h4 className="font-semibold mb-3 text-orange-700 dark:text-orange-400">
+                        Considerations
+                      </h4>
+                      <ul className="list-disc list-inside text-sm text-muted-foreground space-y-2">
+                        {analysis.considerations.map((consideration, index) => (
+                          <li
+                            key={`consideration-${index}-${consideration.substring(0, 20)}`}
+                            className="leading-relaxed"
+                          >
+                            {consideration}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
                 </div>
 
-                {/* Fallback to legacy analysis content */}
-                {!analysisData.summary && analysisData.analysisContent && (
+                {!analysis.summary && analysis.analysisContent && (
                   <article
                     className="prose prose-sm sm:prose lg:prose-lg dark:prose-invert max-w-none"
                     dangerouslySetInnerHTML={{
-                      __html: analysisData.analysisContent.replace(
-                        /\n/g,
-                        '<br />',
-                      ),
+                      __html: analysis.analysisContent.replace(/\n/g, '<br />'),
                     }}
                   />
                 )}
               </div>
-            ) : (
-              <p className="text-muted-foreground">
-                {isFetching
-                  ? 'Loading analysis...'
-                  : 'AI analysis for this repository is not yet available or is in progress.'}
-              </p>
+            )}
+
+            {/* No analysis available yet */}
+            {!analysis && !isLoadingAnalysis && !analysisError && (
+              <div className="text-center py-8">
+                <Lightbulb className="h-12 w-12 text-yellow-400 mx-auto mb-4" />
+                <h3 className="text-lg font-semibold mb-2">
+                  Analysis not available yet
+                </h3>
+                <p className="text-muted-foreground mb-4">
+                  Click "Analyze" to generate AI insights for this repository.
+                </p>
+                <Button onClick={() => refetchAnalysis()}>
+                  <Lightbulb className="mr-2 h-4 w-4" />
+                  Generate Analysis
+                </Button>
+              </div>
             )}
           </CardContent>
         </Card>
-      </section>{' '}
+      </section>
+
       {/* Alternatives Section */}
       <section className="mb-8">
         <div className="mb-6">
@@ -629,135 +702,127 @@ export default function RepoDetailsClient({
             </h2>
           </div>
           <p className="text-muted-foreground">
-            Discover similar projects and alternatives that might fit your
-            needs.
+            Discover similar projects and alternatives that might fit your needs.
           </p>
         </div>
 
-        {analysisData?.alternatives && analysisData.alternatives.length > 0 ? (
+        {analysis?.alternatives && analysis.alternatives.length > 0 ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-6">
-            {' '}
-            {analysisData.alternatives.map(
-              (alt: Alternative, index: number) => (
-                <Card
-                  key={`alt-${alt.name.replace(/\s+/g, '-').toLowerCase()}-${index}`}
-                  className="group hover:shadow-lg transition-all duration-300 hover:border-border bg-card overflow-hidden"
-                >
-                  <CardContent className="p-0">
-                    {/* Header */}
-                    <div className="bg-muted/30 p-4 border-b border-border">
-                      <div className="flex items-start justify-between mb-2">
-                        <div className="flex-1 min-w-0">
-                          <Link
-                            href={alt.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="font-semibold text-lg text-foreground hover:text-primary flex items-center group/link transition-colors line-clamp-1"
-                          >
-                            <span className="truncate">{alt.name}</span>
-                            <ExternalLink className="ml-2 h-4 w-4 opacity-0 group-hover/link:opacity-100 transition-opacity flex-shrink-0" />
-                          </Link>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center justify-between">
-                        {alt.category && (
-                          <Badge
-                            variant="secondary"
-                            className="text-xs font-medium"
-                          >
-                            {alt.category}
-                          </Badge>
-                        )}
-                        {alt.stars && (
-                          <div className="flex items-center text-sm font-medium text-muted-foreground">
-                            <Star className="h-4 w-4 mr-1 fill-yellow-400 text-yellow-400" />
-                            <span>{alt.stars.toLocaleString()}</span>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Content */}
-                    <div className="p-4 space-y-4">
-                      {alt.description && (
-                        <div>
-                          <p className="text-sm text-muted-foreground leading-relaxed line-clamp-3">
-                            {alt.description}
-                          </p>
-                        </div>
-                      )}
-
-                      {alt.reasoning && (
-                        <div className="bg-muted/50 rounded-lg p-3 border border-border">
-                          <div className="flex items-start gap-2">
-                            <Lightbulb className="h-4 w-4 text-primary mt-0.5 flex-shrink-0" />
-                            <div className="min-w-0 flex-1">
-                              <p className="text-xs font-medium text-foreground mb-1">
-                                Why this alternative:
-                              </p>
-                              <p className="text-xs text-muted-foreground leading-relaxed">
-                                {alt.reasoning}
-                              </p>
-                            </div>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Footer */}
-                    {alt.githubUrl && alt.githubUrl !== alt.url && (
-                      <div className="px-4 pb-4">
+            {analysis.alternatives.map((alt: Alternative, index: number) => (
+              <Card
+                key={`alt-${alt.name.replace(/\s+/g, '-').toLowerCase()}-${index}`}
+                className="group hover:shadow-lg transition-all duration-300 hover:border-border bg-card overflow-hidden"
+              >
+                <CardContent className="p-0">
+                  {/* Header */}
+                  <div className="bg-muted/30 p-4 border-b border-border">
+                    <div className="flex items-start justify-between mb-2">
+                      <div className="flex-1 min-w-0">
                         <Link
-                          href={alt.githubUrl}
+                          href={alt.url}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="inline-flex items-center text-xs text-muted-foreground hover:text-primary hover:underline transition-colors"
+                          className="font-semibold text-lg text-foreground hover:text-primary flex items-center group/link transition-colors line-clamp-1"
                         >
-                          <Github className="h-3 w-3 mr-1" />
-                          View on GitHub
+                          <span className="truncate">{alt.name}</span>
+                          <ExternalLink className="ml-2 h-4 w-4 opacity-0 group-hover/link:opacity-100 transition-opacity flex-shrink-0" />
                         </Link>
                       </div>
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      {alt.category && (
+                        <Badge variant="secondary" className="text-xs font-medium">
+                          {alt.category}
+                        </Badge>
+                      )}
+                      {alt.stars && (
+                        <div className="flex items-center text-sm font-medium text-muted-foreground">
+                          <Star className="h-4 w-4 mr-1 fill-yellow-400 text-yellow-400" />
+                          <span>{alt.stars.toLocaleString()}</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Content */}
+                  <div className="p-4 space-y-4">
+                    {alt.description && (
+                      <div>
+                        <p className="text-sm text-muted-foreground leading-relaxed line-clamp-3">
+                          {alt.description}
+                        </p>
+                      </div>
                     )}
-                  </CardContent>
-                </Card>
-              ),
-            )}
+
+                    {alt.reasoning && (
+                      <div className="bg-muted/50 rounded-lg p-3 border border-border">
+                        <div className="flex items-start gap-2">
+                          <Lightbulb className="h-4 w-4 text-primary mt-0.5 flex-shrink-0" />
+                          <div className="min-w-0 flex-1">
+                            <p className="text-xs font-medium text-foreground mb-1">
+                              Why this alternative:
+                            </p>
+                            <p className="text-xs text-muted-foreground leading-relaxed">
+                              {alt.reasoning}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Footer */}
+                  {alt.githubUrl && alt.githubUrl !== alt.url && (
+                    <div className="px-4 pb-4">
+                      <Link
+                        href={alt.githubUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center text-xs text-muted-foreground hover:text-primary hover:underline transition-colors"
+                      >
+                        <Github className="h-3 w-3 mr-1" />
+                        View on GitHub
+                      </Link>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            ))}
           </div>
         ) : (
           <Card className="border-dashed border-2 border-muted-foreground/25">
             <CardContent className="text-center py-12">
               <Users className="h-16 w-16 text-muted-foreground/30 mx-auto mb-4" />
-              <h3 className="text-lg font-semibold mb-2">
-                No Alternatives Found
-              </h3>
+              <h3 className="text-lg font-semibold mb-2">No Alternatives Found</h3>
               <p className="text-muted-foreground max-w-md mx-auto">
-                {isFetching
+                {isLoadingAnalysis || isFetchingAnalysis
                   ? 'Searching for alternatives...'
-                  : 'No alternatives have been analyzed yet. Try re-analyzing the repository to discover similar projects.'}
+                  : 'No alternatives have been analyzed yet. Generate the analysis to discover similar projects.'}
               </p>
             </CardContent>
           </Card>
         )}
       </section>
+
       {/* Footer */}
       <footer className="mt-12 pt-8 border-t border-border">
         <div className="flex flex-col sm:flex-row justify-between items-center text-sm text-muted-foreground">
           <div className="mb-2 sm:mb-0">
             <p>
-              Análisis generado el:{' '}
+              Analysis generated:{' '}
               <span className="font-medium">
-                {analysisData?.createdAt
-                  ? new Date(analysisData.createdAt).toLocaleDateString()
-                  : 'N/A'}
+                {analysis?.createdAt
+                  ? new Date(analysis.createdAt).toLocaleDateString()
+                  : 'Not yet available'}
               </span>
             </p>
           </div>
           <div>
             <p>
-              Datos del repositorio actualizados el:{' '}
+              Repository data updated:{' '}
               <span className="font-medium">
-                {new Date(repoData.updatedAt).toLocaleDateString()}
+                {new Date(repository.updatedAt).toLocaleDateString()}
               </span>
             </p>
           </div>
