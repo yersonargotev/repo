@@ -8,6 +8,7 @@ import { db } from '@/lib/db';
 import { GitHubService } from '@/lib/github';
 import { eq } from 'drizzle-orm';
 import { NextResponse, type NextRequest } from 'next/server';
+import { getRepositoryInfo } from '@/lib/repository';
 
 const githubService = new GitHubService();
 const aiService = new AIAnalysisService();
@@ -44,43 +45,27 @@ async function fetchAndAnalyze(
       }
     }
 
-    // If we don't have the repository, get it first using the repo-info endpoint
+    // If we don't have the repository, get it first using the repository utility
     if (!repoRecord) {
       try {
         console.log(
-          `Repository not in database, using repo-info endpoint for ${fullName}`,
+          `Repository not in database, using repository utility for ${fullName}`,
         );
 
-        // Use internal API call to repo-info endpoint
-        const baseUrl = process.env.VERCEL_URL
-          ? process.env.VERCEL_URL.startsWith('http')
-            ? process.env.VERCEL_URL
-            : `https://${process.env.VERCEL_URL}`
-          : 'http://localhost:3000';
+        const repoInfoResult = await getRepositoryInfo(owner, repoName);
 
-        const repoInfoResponse = await fetch(`${baseUrl}/api/repo-info`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ owner, repo: repoName }),
-        });
-
-        if (repoInfoResponse.ok) {
-          const repoInfoData = await repoInfoResponse.json();
-          if (repoInfoData.success && repoInfoData.repository) {
-            console.log(
-              `Successfully retrieved repository from repo-info: ${fullName}`,
-            );
-            // The repo-info endpoint already saved it to the database, so fetch it
-            repoRecord = await db.query.repositories.findFirst({
-              where: eq(repositoriesTable.fullName, fullName),
-            });
-          }
+        if (repoInfoResult.success && repoInfoResult.repository) {
+          console.log(
+            `Successfully retrieved repository from utility: ${fullName}`,
+          );
+          // The utility already saved it to the database, so fetch it
+          repoRecord = await db.query.repositories.findFirst({
+            where: eq(repositoriesTable.fullName, fullName),
+          });
         }
       } catch (repoInfoError) {
         console.warn(
-          `Failed to get repository from repo-info endpoint: ${fullName}`,
+          `Failed to get repository from utility: ${fullName}`,
           repoInfoError,
         );
       }

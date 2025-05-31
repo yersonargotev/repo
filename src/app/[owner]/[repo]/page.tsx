@@ -3,90 +3,13 @@ import {
   QueryClient,
   dehydrate,
 } from '@tanstack/react-query';
+import { getRepositoryInfo } from '@/lib/repository';
 import RepoDetailsClient from './repo-details-client';
 
 // --- Tipos para los datos ---
 interface RepoPageParams {
   owner: string;
   repo: string;
-}
-
-// --- Función simplificada para obtener datos del repositorio ---
-async function getRepositoryInfo(owner: string, repoName: string) {
-  try {
-    // Use the simplified repo-info endpoint first
-    const baseUrl =
-      process.env.NODE_ENV === 'development'
-        ? 'http://localhost:3000'
-        : process.env.VERCEL_URL
-          ? process.env.VERCEL_URL.startsWith('http')
-            ? process.env.VERCEL_URL
-            : `https://${process.env.VERCEL_URL}`
-          : `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL || 'localhost:3000'}`;
-
-    console.log(`Server: Fetching repository info for ${owner}/${repoName}`);
-
-    const repoInfoUrl = `${baseUrl}/api/repo-info`;
-    const repoResponse = await fetch(repoInfoUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ owner, repo: repoName }),
-      cache: 'no-store',
-    });
-
-    if (!repoResponse.ok) {
-      console.error(`Repository info fetch failed: ${repoResponse.status} ${repoResponse.statusText}`);
-
-      if (repoResponse.status === 404) {
-        return {
-          success: false,
-          error: 'REPOSITORY_NOT_FOUND',
-          repository: null,
-          analysis: null,
-        };
-      }
-
-      return {
-        success: false,
-        error: 'REPOSITORY_FETCH_ERROR',
-        repository: null,
-        analysis: null,
-      };
-    }
-
-    const repoData = await repoResponse.json();
-
-    if (!repoData.success) {
-      console.error('Repository info fetch failed:', repoData.error);
-      return {
-        success: false,
-        error: 'REPOSITORY_FETCH_ERROR',
-        repository: null,
-        analysis: null,
-      };
-    }
-
-    console.log(`Server: Successfully fetched repository info for ${owner}/${repoName}`);
-
-    // Return the repository data - analysis will be handled client-side
-    return {
-      success: true,
-      repository: repoData.repository,
-      analysis: null, // Analysis will be loaded client-side
-      error: null,
-    };
-  } catch (fetchError) {
-    console.error(`Server: Error fetching repository info for ${owner}/${repoName}:`, fetchError);
-
-    return {
-      success: false,
-      error: 'REPOSITORY_FETCH_ERROR',
-      repository: null,
-      analysis: null,
-    };
-  }
 }
 
 // --- Metadata Dinámica Simplificada ---
@@ -176,7 +99,9 @@ export default async function RepoPage({
       gcTime: 1000 * 60 * 60, // 1 hora
     });
 
-    console.log(`Server: Successfully prefetched repository info for ${owner}/${repo}`);
+    console.log(
+      `Server: Successfully prefetched repository info for ${owner}/${repo}`,
+    );
   } catch (error) {
     // Log del error pero no fallar la página
     console.log('Server: Prefetch failed, client will handle the request:', {
