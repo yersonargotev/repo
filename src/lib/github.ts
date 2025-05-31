@@ -70,7 +70,8 @@ export class GitHubService {
     };
 
     if (this.apiKey) {
-      headers.Authorization = `token ${this.apiKey}`;
+      // Use Bearer format for better compatibility with newer GitHub tokens
+      headers.Authorization = `Bearer ${this.apiKey}`;
     } else {
       console.warn(
         'No GitHub token found. Some API calls may fail due to rate limits.',
@@ -98,11 +99,91 @@ export class GitHubService {
           status: response.status,
           statusText: response.statusText,
           hasToken: !!this.apiKey,
+          tokenLength: this.apiKey?.length || 0,
+          url,
+          headers: this.getHeaders(),
         });
 
         if (response.status === 401) {
+          // Try to get more details about the auth error
+          let errorDetails = '';
+          try {
+            const errorBody = await response.text();
+            errorDetails = errorBody;
+          } catch (e) {
+            errorDetails = 'Could not read error response';
+          }
+
+          // Try fallback without authentication for public repos
+          console.log(
+            `Attempting fallback without authentication for ${owner}/${repo}`,
+          );
+          return await this.fetchRepositoryWithoutAuth(owner, repo);
+        }
+        if (response.status === 404) {
+          throw new Error(`Repository ${owner}/${repo} not found`);
+        }
+        if (response.status === 403) {
+          // Check if it's rate limiting or permissions
+          let errorDetails = '';
+          try {
+            const errorBody = await response.text();
+            errorDetails = errorBody;
+          } catch (e) {
+            errorDetails = 'Could not read error response';
+          }
+
+          if (errorDetails.includes('rate limit')) {
+            throw new Error(
+              'GitHub API rate limit exceeded. Please try again later.',
+            );
+          } else {
+            throw new Error(
+              `GitHub API access forbidden. This might be a permissions issue. Details: ${errorDetails}`,
+            );
+          }
+        }
+        throw new Error(
+          `GitHub API error: ${response.status} ${response.statusText}`,
+        );
+      }
+
+      const data = await response.json();
+      console.log(`Successfully fetched repository: ${owner}/${repo}`);
+      return data;
+    } catch (error) {
+      console.error(`Error fetching repository ${owner}/${repo}:`, error);
+      if (error instanceof Error) {
+        throw error;
+      }
+      throw new Error('Failed to fetch repository data from GitHub');
+    }
+  }
+
+  // Fallback method for public repositories without authentication
+  private async fetchRepositoryWithoutAuth(
+    owner: string,
+    repo: string,
+  ): Promise<GitHubRepo> {
+    const url = `${this.baseUrl}/repos/${owner}/${repo}`;
+
+    try {
+      console.log(
+        `Fallback: Fetching repository without auth: ${owner}/${repo}`,
+      );
+
+      const response = await fetch(url, {
+        headers: {
+          Accept: 'application/vnd.github.v3+json',
+          'User-Agent': 'GitHub-Repo-Analyzer/1.0',
+        },
+        next: { revalidate: 3600 },
+      });
+
+      if (!response.ok) {
+        if (response.status === 401) {
           throw new Error(
-            'GitHub API authentication failed. Please check your GITHUB_TOKEN environment variable.',
+            `GitHub API authentication failed. Status: 401. Please check your GITHUB_TOKEN environment variable and ensure it has the required permissions.`,
           );
         }
         if (response.status === 404) {
@@ -119,14 +200,13 @@ export class GitHubService {
       }
 
       const data = await response.json();
-      console.log(`Successfully fetched repository: ${owner}/${repo}`);
+      console.log(
+        `Successfully fetched repository without auth: ${owner}/${repo}`,
+      );
       return data;
     } catch (error) {
-      console.error(`Error fetching repository ${owner}/${repo}:`, error);
-      if (error instanceof Error) {
-        throw error;
-      }
-      throw new Error('Failed to fetch repository data from GitHub');
+      console.error(`Fallback also failed for ${owner}/${repo}:`, error);
+      throw error;
     }
   }
 
