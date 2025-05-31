@@ -427,7 +427,7 @@ export default function RepositoriesPage() {
                       {repo.name}
                     </CardTitle>
                     <CardDescription className="text-xs">
-                      por {repo.owner}
+                      by {repo.owner}
                     </CardDescription>
                   </div>
                 </div>
